@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🗼 Minaret WebSocket Tester</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background: #1a1a1a; 
+            color: #fff; 
+        }
+        .container { background: #2d2d2d; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        input, textarea, button { 
+            width: 100%; 
+            padding: 10px; 
+            margin: 5px 0; 
+            border: 1px solid #555; 
+            border-radius: 5px; 
+            background: #3d3d3d; 
+            color: #fff; 
+            font-size: 14px; 
+        }
+        button { 
+            background: #4CAF50; 
+            cursor: pointer; 
+            transition: background 0.3s; 
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        .status { 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin: 10px 0; 
+            font-weight: bold; 
+        }
+        .connected { background: #4CAF50; }
+        .disconnected { background: #f44336; }
+        .log { 
+            background: #1e1e1e; 
+            border: 1px solid #555; 
+            border-radius: 5px; 
+            padding: 10px; 
+            height: 300px; 
+            overflow-y: auto; 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px; 
+        }
+        .message { 
+            margin: 5px 0; 
+            padding: 5px; 
+            border-radius: 3px; 
+        }
+        .sent { background: #1e3a8a; }
+        .received { background: #166534; }
+        .error { background: #7f1d1d; }
+        .examples { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 10px; 
+            margin: 10px 0; 
+        }
+        .example { 
+            background: #3d3d3d; 
+            padding: 10px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            transition: background 0.3s; 
+        }
+        .example:hover { background: #4d4d4d; }
+        h1 { text-align: center; color: #4CAF50; }
+        h3 { color: #4CAF50; }
+    </style>
+</head>
+<body>
+    <h1>🗼 Minaret WebSocket Tester</h1>
+    
+    <div class="container">
+        <h3>Connection</h3>
+        <input type="text" id="url" value="ws://localhost:8765" placeholder="WebSocket URL">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <input type="text" id="username" placeholder="Username (optional)">
+            <input type="password" id="password" placeholder="Password (optional)">
+        </div>
+        <div style="background: #333; padding: 10px; border-radius: 5px; margin: 5px 0; font-size: 12px;">
+            ⚠️ <strong>Note:</strong> Browser WebSocket API doesn't support custom headers. 
+            For authentication testing, use tools like <code>wscat</code> or <code>curl</code>.
+        </div>
+        <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+        <div id="status" class="status disconnected">Disconnected</div>
+    </div>
+
+    <div class="container">
+        <h3>Send Message</h3>
+        <div class="examples">
+            <div class="example" onclick="setMessage('chat')">
+                <strong>💬 Chat Message</strong><br>
+                <small>Send chat to all players</small>
+            </div>
+            <div class="example" onclick="setMessage('command')">
+                <strong>⚡ Server Command</strong><br>
+                <small>Execute server command</small>
+            </div>
+        </div>
+        <textarea id="message" rows="3" placeholder='{"message": "Hello world!"}'></textarea>
+        <button onclick="sendMessage()" id="sendBtn" disabled>Send Message</button>
+    </div>
+
+    <div class="container">
+        <h3>Message Log</h3>
+        <div id="log" class="log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script>
+        let ws = null;
+        let isConnected = false;
+
+        function toggleConnection() {
+            if (isConnected) {
+                disconnect();
+            } else {
+                connect();
+            }
+        }
+
+        function connect() {
+            const url = document.getElementById('url').value;
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            try {
+                // Create WebSocket with auth headers if credentials provided
+                if (username && password) {
+                    const credentials = btoa(username + ':' + password);
+                    const headers = {
+                        'Authorization': 'Basic ' + credentials
+                    };
+                    
+                    // Note: WebSocket constructor doesn't support custom headers directly
+                    // This is a limitation of browser WebSocket API
+                    // For proper auth, you'd need a custom client or use subprotocols
+                    ws = new WebSocket(url, ['authorization', 'Basic ' + credentials]);
+                } else {
+                    ws = new WebSocket(url);
+                }
+                
+                ws.onopen = function() {
+                    isConnected = true;
+                    updateUI();
+                    logMessage('🔗 Connected to ' + url + (username ? ' (authenticated as ' + username + ')' : ''), 'received');
+                };
+                
+                ws.onmessage = function(event) {
+                    logMessage('📨 Received: ' + event.data, 'received');
+                };
+                
+                ws.onclose = function(event) {
+                    isConnected = false;
+                    updateUI();
+                    if (event.code === 1006) {
+                        logMessage('❌ Connection failed - check credentials and server status', 'error');
+                    } else {
+                        logMessage('❌ Connection closed (code: ' + event.code + ')', 'error');
+                    }
+                };
+                
+                ws.onerror = function(error) {
+                    logMessage('💥 WebSocket error - authentication may have failed', 'error');
+                };
+                
+            } catch (error) {
+                logMessage('💥 Connection failed: ' + error.message, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function sendMessage() {
+            if (!isConnected || !ws) {
+                logMessage('💥 Not connected!', 'error');
+                return;
+            }
+            
+            const message = document.getElementById('message').value.trim();
+            if (!message) {
+                logMessage('💥 Message is empty!', 'error');
+                return;
+            }
+            
+            try {
+                ws.send(message);
+                logMessage('📤 Sent: ' + message, 'sent');
+            } catch (error) {
+                logMessage('💥 Send failed: ' + error.message, 'error');
+            }
+        }
+
+        function setMessage(type) {
+            const messageInput = document.getElementById('message');
+            
+            if (type === 'chat') {
+                messageInput.value = '{"message": "Hello from WebSocket! 👋"}';
+            } else if (type === 'command') {
+                messageInput.value = '{"command": "say WebSocket command executed! 🚀"}';
+            }
+        }
+
+        function updateUI() {
+            const connectBtn = document.getElementById('connectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const status = document.getElementById('status');
+            
+            if (isConnected) {
+                connectBtn.textContent = 'Disconnect';
+                sendBtn.disabled = false;
+                status.textContent = 'Connected ✅';
+                status.className = 'status connected';
+            } else {
+                connectBtn.textContent = 'Connect';
+                sendBtn.disabled = true;
+                status.textContent = 'Disconnected ❌';
+                status.className = 'status disconnected';
+            }
+        }
+
+        function logMessage(message, type) {
+            const log = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = `[${timestamp}] ${message}`;
+            log.appendChild(messageDiv);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Allow Enter key to send message
+        document.getElementById('message').addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initialize UI
+        updateUI();
+    </script>
+</body>
+</html>
