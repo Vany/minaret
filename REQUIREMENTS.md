@@ -37,9 +37,22 @@
 
 ### Message Protocol
 ```json
-// Chat message format
+// Basic chat message format
 {
   "message": "Text to broadcast to all players"
+}
+
+// User chat message format
+{
+  "message": "Text to broadcast to all players",
+  "user": "Username of the sender (optional)"
+}
+
+// Cross-platform chat message format  
+{
+  "message": "Text to broadcast to all players",
+  "user": "Username of the sender (optional)",
+  "chat": "Source platform identifier (optional)"
 }
 
 // Command execution format  
@@ -76,7 +89,11 @@
 ### Chat Integration Requirements  
 - **Message Broadcasting**: Send to all connected players
 - **Message Formatting**: Support Minecraft text components and color codes
-- **Source Identification**: Messages prefixed with `[WebSocket]` tag
+- **Dynamic Display Logic**:
+  - Anonymous messages (no user): `§8⊞ §7message` (empty sign style)
+  - User messages: `§f<user> message` (standard chat format)
+  - Cross-platform messages: `§7[chat] §f<user> message` (with source identifier)
+- **Cross-Platform Support**: Optional chat field for identifying message source (discord, slack, etc.)
 - **Player Targeting**: Broadcast to entire player list
 - **Thread Safety**: Chat messages sent on main server thread
 
@@ -201,3 +218,5 @@
 - **Event Broadcasting**: Server events pushed to WebSocket clients
 - **Player Management**: Player join/leave notifications
 - **World Data**: Real-time world state information
+- **Cross-Platform Chat**: Native support for Discord, Slack, and other chat platforms
+- **Message Attribution**: User and source identification in chat messages
