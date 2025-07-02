@@ -296,12 +296,32 @@ public class WebSocketServer {
                 
                 if (json.containsKey("message")) {
                     String chatMessage = json.get("message");
+                    String user = json.get("user");
+                    String chat = json.get("chat");
+                    
                     mcServer.execute(() -> {
-                        Component component = Component.literal("§7[WebSocket] §f" + chatMessage);
+                        Component component;
+                        
+                        if (user == null || user.isEmpty()) {
+                            // No user field → Empty sign display (minimal formatting)
+                            component = Component.literal("§8⊞ §7" + chatMessage);
+                        } else {
+                            // User field exists → Format as chat message
+                            if (chat != null && !chat.isEmpty()) {
+                                // With chat prefix: [discord] <Alice> hello
+                                component = Component.literal("§7[" + chat + "] §f<" + user + "> " + chatMessage);
+                            } else {
+                                // Without chat prefix: <Alice> hello  
+                                component = Component.literal("§f<" + user + "> " + chatMessage);
+                            }
+                        }
+                        
                         for (ServerPlayer player : mcServer.getPlayerList().getPlayers()) {
                             player.sendSystemMessage(component);
                         }
-                        LOGGER.info("💬 WebSocket chat: {}", chatMessage);
+                        
+                        String logMessage = user != null ? "<" + user + "> " + chatMessage : "⊞ " + chatMessage;
+                        LOGGER.info("💬 Chat: {}", logMessage);
                     });
                     
                     Map<String, String> response = new HashMap<>();

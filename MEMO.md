@@ -5,8 +5,8 @@
 
 ## 🎯 Current Status: ✅ FULLY FUNCTIONAL
 
-**Latest Build**: `build/libs/minaret-1.0.0.jar` (15,879 bytes)  
-**Version**: 1.0.0  
+**Latest Build**: `build/libs/minaret-1.0.1.jar` (16,175 bytes)  
+**Version**: 1.0.1  
 **Compatibility**: NeoForge 21.1.172+ | Minecraft 1.21.1 | Java 21+
 
 ## 🚀 Implemented Features
@@ -34,7 +34,11 @@
 
 ### ✅ Chat Integration
 - **Message Broadcasting**: Chat messages sent to all connected players
-- **Source Identification**: Messages prefixed with `§7[WebSocket] §f` formatting
+- **Dynamic Formatting**: 
+  - Anonymous messages (no user): `§8⊞ §7message` (empty sign style)
+  - User messages: `§f<user> message` 
+  - Chat-sourced messages: `§7[chat] §f<user> message`
+- **Source Support**: Optional chat field to identify message source (discord, slack, etc.)
 - **Thread Safety**: All chat operations executed on main server thread
 - **Component Support**: Full Minecraft text component integration
 
@@ -66,10 +70,24 @@ Authorization: Basic <base64(username:password)>
 
 ### Message Formats
 
-**Chat Message Request**:
+**Chat Message Requests**:
 ```json
+// Anonymous message (empty sign display)
 {
   "message": "Hello world!"
+}
+
+// User message without chat source
+{
+  "message": "Hello world!",
+  "user": "Alice"
+}
+
+// User message with chat source
+{
+  "message": "Hello world!",
+  "user": "Bob", 
+  "chat": "discord"
 }
 ```
 
@@ -201,8 +219,12 @@ wscat -c ws://localhost:8765
 # Connect with authentication
 wscat -c ws://localhost:8765 -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 
+# Test message types
+{"message": "Anonymous message"}                                    # → ⊞ Anonymous message
+{"message": "Hello!", "user": "Alice"}                            # → <Alice> Hello!
+{"message": "Hello from Discord!", "user": "Bob", "chat": "discord"} # → [discord] <Bob> Hello from Discord!
+
 # Test commands
-{"message": "Hello from command line!"}
 {"command": "say WebSocket is working!"}
 {"command": "op PlayerName"}
 {"command": "gamemode creative PlayerName"}
@@ -247,7 +269,7 @@ make clean
 make build
 
 # Output location
-build/libs/minaret-1.0.0.jar
+build/libs/minaret-1.0.1.jar
 ```
 
 ### Development Environment
@@ -273,6 +295,14 @@ minaret/
 ```
 
 ## 📋 Issue Resolution History
+
+### ✅ v1.0.1 - Enhanced Chat Messaging (LATEST)
+- **Added**: Dynamic chat message formatting based on user/chat fields
+- **Feature**: Anonymous messages display as `§8⊞ §7message` (empty sign style)
+- **Feature**: User messages display as `§f<user> message`
+- **Feature**: Chat-sourced messages display as `§7[chat] §f<user> message`
+- **API**: New optional `user` and `chat` fields in message JSON
+- **Result**: Better integration with external chat systems (Discord, Slack, etc.)
 
 ### ✅ Language Provider Issue (RESOLVED)
 - **Problem**: `modLoader = "neoforge"` incompatible with NeoForge 21.1+

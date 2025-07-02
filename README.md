@@ -24,7 +24,7 @@ Minaret enables external applications to interact with your Minecraft server thr
 
 ### Installation
 
-1. **Download** the latest `minaret-1.0.0.jar` from releases
+1. **Download** the latest `minaret-1.0.1.jar` from releases
 2. **Place** the jar in your server's `mods/` folder
 3. **Start** your NeoForge 1.21.1 server
 4. **Configure** via `config/minaret-server.toml` (optional)
@@ -273,7 +273,7 @@ cd minaret
 # Build mod
 make build
 
-# Output: build/libs/minaret-1.0.0.jar
+# Output: build/libs/minaret-1.0.1.jar
 ```
 
 ### Project Structure

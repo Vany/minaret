@@ -2,7 +2,7 @@ plugins {
     id 'net.neoforged.gradle.userdev' version '7.0.156'
 }
 
-version = '1.0.0'
+version = '1.0.1'
 group = 'com.minaret'
 base.archivesName = 'minaret'
 
