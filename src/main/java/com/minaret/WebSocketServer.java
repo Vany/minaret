@@ -483,7 +483,6 @@ public class WebSocketServer {
         private void parseFrame(byte[] buffer, int length) throws IOException {
             if (length < 2) return;
 
-            boolean fin = (buffer[0] & 0x80) != 0;
             int opcode = buffer[0] & 0x0F;
             boolean masked = (buffer[1] & 0x80) != 0;
             int payloadLen = buffer[1] & 0x7F;
