@@ -9,7 +9,9 @@ import net.minecraft.world.effect.MobEffectCategory;
  */
 public class StreamerProtectEffect extends MobEffect {
 
+    private static final int COLOR_GOLD = 0xFFD700;
+
     public StreamerProtectEffect() {
-        super(MobEffectCategory.BENEFICIAL, 0xFFD700);
+        super(MobEffectCategory.BENEFICIAL, COLOR_GOLD);
     }
 }

@@ -1,5 +1,10 @@
 {
   "effect.minaret.martial_lightning": "Martial Lightning",
   "effect.minaret.streamer_protect": "Streamer Protect",
-  "effect.minaret.homing_archery": "Homing Archery"
+  "effect.minaret.homing_archery": "Homing Archery",
+  "block.minaret.chunk_loader": "Chunk Loader",
+  "block.minaret.spawner_agitator": "Spawner Agitator",
+  "item.minaret.chunk_loader": "Chunk Loader",
+  "item.minaret.spawner_agitator": "Spawner Agitator",
+  "itemGroup.minaret": "Minaret"
 }

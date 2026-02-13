@@ -1,8 +1,8 @@
 package com.minaret;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -15,30 +15,35 @@ import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 
 public class MartialLightningHandler {
 
-    // Prevent recursive AoE hits from triggering more AoE
-    private static final Set<Player> activeAoe = new HashSet<>();
+    private static final int POISON_AMPLIFIER = 31;
+    private static final int POISON_DURATION_TICKS = 200;
+    private static final int WITHER_AMPLIFIER = 3;
+    private static final int WITHER_DURATION_TICKS = 200;
+    private static final double FRONT_DOT_THRESHOLD = 0.0;
+
+    /** Prevents recursive AoE hits from triggering more AoE. Thread-safe. */
+    private static final Set<Player> playersInAoeSwing =
+        ConcurrentHashMap.newKeySet();
 
     public static void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof Player player)) return;
         if (!player.hasEffect(MinaretMod.MARTIAL_LIGHTNING)) return;
-        if (activeAoe.contains(player)) return;
+        if (playersInAoeSwing.contains(player)) return;
 
         LivingEntity target = event.getEntity();
         ItemStack weapon = player.getMainHandItem();
-        String itemPath = weapon.isEmpty() ? ""
+        String itemPath = weapon.isEmpty()
+            ? ""
             : BuiltInRegistries.ITEM.getKey(weapon.getItem()).getPath();
 
         ToolCategory category = categorize(itemPath, weapon.isEmpty());
 
-        // Apply damage multiplier
         event.setAmount(event.getAmount() * category.damageMultiplier);
 
-        // AoE and secondary effects
         if (category.aoe) {
             performAoe(player, target, event.getAmount(), category);
         }
 
-        // Apply secondary effects to primary target
         applySecondaryEffect(target, player, category);
     }
 
@@ -53,26 +58,28 @@ public class MartialLightningHandler {
         Vec3 eyePos = player.getEyePosition();
 
         AABB searchBox = player.getBoundingBox().inflate(reach);
-        List<LivingEntity> nearby = player.level().getEntitiesOfClass(
-            LivingEntity.class, searchBox
-        );
+        List<LivingEntity> nearby = player
+            .level()
+            .getEntitiesOfClass(LivingEntity.class, searchBox);
 
-        activeAoe.add(player);
+        playersInAoeSwing.add(player);
         try {
             for (LivingEntity entity : nearby) {
                 if (entity == player || entity == primaryTarget) continue;
                 if (player.isAlliedTo(entity)) continue;
                 if (player.distanceToSqr(entity) > reach * reach) continue;
 
-                // Check entity is in front of the player
                 Vec3 toEntity = entity.position().subtract(eyePos).normalize();
-                if (look.dot(toEntity) <= 0) continue;
+                if (look.dot(toEntity) <= FRONT_DOT_THRESHOLD) continue;
 
-                entity.hurt(player.damageSources().playerAttack(player), damage);
+                entity.hurt(
+                    player.damageSources().playerAttack(player),
+                    damage
+                );
                 applySecondaryEffect(entity, player, category);
             }
         } finally {
-            activeAoe.remove(player);
+            playersInAoeSwing.remove(player);
         }
     }
 
@@ -83,15 +90,23 @@ public class MartialLightningHandler {
     ) {
         switch (category) {
             case WOODEN:
-                // Fatal poison: amplifier 31, 10 seconds
                 target.addEffect(
-                    new MobEffectInstance(MobEffects.POISON, 200, 31), player
+                    new MobEffectInstance(
+                        MobEffects.POISON,
+                        POISON_DURATION_TICKS,
+                        POISON_AMPLIFIER
+                    ),
+                    player
                 );
                 break;
             case STONE:
-                // Wither: amplifier 3, 10 seconds
                 target.addEffect(
-                    new MobEffectInstance(MobEffects.WITHER, 200, 3), player
+                    new MobEffectInstance(
+                        MobEffects.WITHER,
+                        WITHER_DURATION_TICKS,
+                        WITHER_AMPLIFIER
+                    ),
+                    player
                 );
                 break;
             default:

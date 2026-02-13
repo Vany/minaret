@@ -1,5 +1,6 @@
 package com.minaret;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,7 +22,18 @@ import net.neoforged.neoforge.event.entity.player.ArrowLooseEvent;
 
 public class HomingArcheryHandler {
 
-    private static final Map<UUID, Float> bulletDamageMap =
+    private static final float ARROW_BASE_DAMAGE = 2.0F;
+    private static final float VELOCITY_SCALE = 3.0F;
+    private static final float DAMAGE_MULTIPLIER = 3.0F;
+    private static final float MIN_POWER = 0.1F;
+    private static final double RAYCAST_RANGE = 100.0;
+    private static final double SEARCH_RANGE = 50.0;
+    private static final double AIM_CONE_THRESHOLD = 0.5;
+    private static final long STALE_ENTRY_MILLIS = 60_000L;
+
+    private record TrackedBullet(float damage, long createdAt) {}
+
+    private static final Map<UUID, TrackedBullet> bulletDamageMap =
         new ConcurrentHashMap<>();
 
     public static void onArrowLoose(ArrowLooseEvent event) {
@@ -30,18 +42,16 @@ public class HomingArcheryHandler {
         if (!(player.level() instanceof ServerLevel serverLevel)) return;
 
         float power = BowItem.getPowerForTime(event.getCharge());
-        if (power < 0.1F) return;
+        if (power < MIN_POWER) return;
 
-        // Find target closest to crosshair
         Entity target = findTarget(player);
-        if (target == null) return; // No target — let normal arrow fire
+        if (target == null) return;
 
         event.setCanceled(true);
+        cleanupStaleEntries();
 
-        // Arrow base damage = 2.0, velocity = power * 3.0
-        // Final arrow damage = baseDamage * velocity = 2.0 * power * 3.0 = 6.0 * power
-        // Homing damage = 3x that
-        float damage = 6.0F * power * 3.0F;
+        float damage =
+            ARROW_BASE_DAMAGE * VELOCITY_SCALE * power * DAMAGE_MULTIPLIER;
 
         ShulkerBullet bullet = new ShulkerBullet(
             serverLevel,
@@ -53,9 +63,14 @@ public class HomingArcheryHandler {
         bullet.setPos(eyePos.x, eyePos.y, eyePos.z);
         bullet.setYRot(player.getYRot());
         bullet.setXRot(player.getXRot());
-        bullet.setDeltaMovement(player.getLookAngle().scale(power * 3.0));
+        bullet.setDeltaMovement(
+            player.getLookAngle().scale(power * VELOCITY_SCALE)
+        );
 
-        bulletDamageMap.put(bullet.getUUID(), damage);
+        bulletDamageMap.put(
+            bullet.getUUID(),
+            new TrackedBullet(damage, System.currentTimeMillis())
+        );
         serverLevel.addFreshEntity(bullet);
     }
 
@@ -63,9 +78,9 @@ public class HomingArcheryHandler {
         Entity directEntity = event.getSource().getDirectEntity();
         if (!(directEntity instanceof ShulkerBullet bullet)) return;
 
-        Float damage = bulletDamageMap.remove(bullet.getUUID());
-        if (damage != null) {
-            event.setAmount(damage);
+        TrackedBullet tracked = bulletDamageMap.remove(bullet.getUUID());
+        if (tracked != null) {
+            event.setAmount(tracked.damage);
         }
     }
 
@@ -77,17 +92,16 @@ public class HomingArcheryHandler {
                 entity instanceof LivingEntity &&
                 !entity.isSpectator() &&
                 entity.isAlive(),
-            100.0
+            RAYCAST_RANGE
         );
         if (hit.getType() == HitResult.Type.ENTITY) {
             return ((EntityHitResult) hit).getEntity();
         }
 
-        // Fallback: find nearest living entity roughly in look direction
+        // Fallback: nearest living entity roughly in look direction
         Vec3 look = player.getLookAngle();
         Vec3 eyePos = player.getEyePosition();
-        double searchRange = 50.0;
-        AABB searchBox = player.getBoundingBox().inflate(searchRange);
+        AABB searchBox = player.getBoundingBox().inflate(SEARCH_RANGE);
 
         List<LivingEntity> entities = player
             .level()
@@ -98,7 +112,7 @@ public class HomingArcheryHandler {
             );
 
         Entity best = null;
-        double bestScore = -1.0;
+        double bestAlignment = -1.0;
 
         for (LivingEntity entity : entities) {
             Vec3 toEntity = entity
@@ -107,13 +121,24 @@ public class HomingArcheryHandler {
                 .subtract(eyePos)
                 .normalize();
             double dot = look.dot(toEntity);
-            if (dot > 0.5 && dot > bestScore) {
-                // Within ~60 degree cone
-                bestScore = dot;
+            if (dot > AIM_CONE_THRESHOLD && dot > bestAlignment) {
+                bestAlignment = dot;
                 best = entity;
             }
         }
 
         return best;
+    }
+
+    private static void cleanupStaleEntries() {
+        long now = System.currentTimeMillis();
+        Iterator<Map.Entry<UUID, TrackedBullet>> it = bulletDamageMap
+            .entrySet()
+            .iterator();
+        while (it.hasNext()) {
+            if (now - it.next().getValue().createdAt > STALE_ENTRY_MILLIS) {
+                it.remove();
+            }
+        }
     }
 }

@@ -5,8 +5,8 @@
 
 ## 🎯 Current Status: ✅ FULLY FUNCTIONAL
 
-**Latest Build**: `build/libs/minaret-1.0.1.jar` (16,175 bytes)  
-**Version**: 1.0.1  
+**Latest Build**: `build/libs/minaret-1.0.0.jar` (15,879 bytes)  
+**Version**: 1.0.0  
 **Compatibility**: NeoForge 21.1.172+ | Minecraft 1.21.1 | Java 21+
 
 ## 🚀 Implemented Features
@@ -34,11 +34,7 @@
 
 ### ✅ Chat Integration
 - **Message Broadcasting**: Chat messages sent to all connected players
-- **Dynamic Formatting**: 
-  - Anonymous messages (no user): `§8⊞ §7message` (empty sign style)
-  - User messages: `§f<user> message` 
-  - Chat-sourced messages: `§7[chat] §f<user> message`
-- **Source Support**: Optional chat field to identify message source (discord, slack, etc.)
+- **Source Identification**: Messages prefixed with `§7[WebSocket] §f` formatting
 - **Thread Safety**: All chat operations executed on main server thread
 - **Component Support**: Full Minecraft text component integration
 
@@ -70,31 +66,11 @@ Authorization: Basic <base64(username:password)>
 
 ### Message Formats
 
-**Anonymous Message** (Empty Sign Display):
+**Chat Message Request**:
 ```json
 {
-  "message": "Server maintenance in 5 minutes"
+  "message": "Hello world!"
 }
-// → ⊞ Server maintenance in 5 minutes
-```
-
-**User Message** (Standard Chat):
-```json
-{
-  "message": "Hello everyone!",
-  "user": "Alice"
-}  
-// → <Alice> Hello everyone!
-```
-
-**Cross-Platform Message** (With Source):
-```json
-{
-  "message": "Hello from Discord!",
-  "user": "Bob",
-  "chat": "discord"
-}
-// → [discord] <Bob> Hello from Discord!
 ```
 
 **Chat Message Response**:
@@ -175,18 +151,24 @@ auth_password = ""
 - **Permissions**: OP level 4 for all command execution
 
 ### Key Components
-- **`MinaretMod`**: Main mod class with NeoForge lifecycle management
-- **`WebSocketServer`**: RFC 6455 compliant WebSocket server with authentication
-- **`SimpleJson`**: Zero-dependency JSON parser/generator for message handling
-- **`MinaretConfig`**: NeoForge configuration integration with hot reload
+- **`MinaretMod`**: Main mod class with lifecycle management
+- **`WebSocketServer`**: Core WebSocket server implementation
+- **`SimpleJson`**: Lightweight JSON parser/generator
+- **`MinaretConfig`**: NeoForge configuration integration
+- **`SpawnerAgitatorBlock` / `SpawnerAgitatorBlockEntity`**: Event-driven spawner enhancement block
+- **`ChunkLoaderBlock` / `ChunkLoaderBlockEntity`**: Chunk force-loading block
+- **`ChunkLoaderData`**: Persistent chunk loader position registry (atomic text file save)
+- **`Compat`**: Cross-version reflection utilities with cached Method/Field objects
 
 ### Design Decisions
-- **Zero Dependencies**: Eliminates jar conflicts and simplifies distribution
-- **Manual WebSocket**: Complete protocol control with custom security implementation
-- **Custom JSON**: Minimal overhead for simple message structure, ~100 LOC
-- **Thread Separation**: WebSocket I/O isolated from Minecraft server thread
-- **OP Permissions**: All commands execute with level 4 (maximum) permissions
-- **Dynamic Chat**: Context-aware message formatting based on user/chat fields
+- **No External Dependencies**: Eliminates jar bundling complexity and version conflicts
+- **Manual WebSocket**: Full control over protocol implementation and security
+- **Custom JSON**: Minimal overhead for simple message structure
+- **Thread Separation**: WebSocket I/O separate from Minecraft server thread
+- **OP Permissions**: Ensures all commands can be executed without permission issues
+- **Event-driven block entities**: Spawner binding on place/load events, not per-tick polling
+- **No world access in setRemoved()**: Prevents infinite loops during chunk unload/shutdown
+- **Atomic file persistence**: ChunkLoaderData uses tmp+rename to prevent corruption
 
 ## 📊 Performance Characteristics
 
@@ -209,12 +191,7 @@ auth_password = ""
 ```javascript
 const ws = new WebSocket('ws://localhost:8765');
 ws.onopen = () => {
-    // Test different message types
-    ws.send('{"message": "Anonymous server message"}');
-    ws.send('{"message": "Hello!", "user": "WebUser"}');
-    ws.send('{"message": "From web browser", "user": "BrowserUser", "chat": "web"}');
-    
-    // Test commands
+    ws.send('{"message": "Hello from browser!"}');
     ws.send('{"command": "time set day"}');
     ws.send('{"command": "op TestPlayer"}');
 };
@@ -231,31 +208,20 @@ wscat -c ws://localhost:8765
 # Connect with authentication
 wscat -c ws://localhost:8765 -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 
-# Test message types
-{"message": "Anonymous message"}                                    # → ⊞ Anonymous message
-{"message": "Hello!", "user": "Alice"}                            # → <Alice> Hello!
-{"message": "Hello from Discord!", "user": "Bob", "chat": "discord"} # → [discord] <Bob> Hello from Discord!
-
 # Test commands
+{"message": "Hello from command line!"}
 {"command": "say WebSocket is working!"}
 {"command": "op PlayerName"}
 {"command": "gamemode creative PlayerName"}
 {"command": "give PlayerName diamond 64"}
 ```
 
-### Validated Commands & Use Cases
-- **Chat Commands**: `say`, `tellraw`, `title` - Server announcements and notifications
-- **Player Management**: `op`, `deop`, `kick`, `ban` - Administrative actions
-- **Game Control**: `gamemode`, `time`, `weather` - World state management
-- **World Management**: `tp`, `give`, `setblock` - Direct world manipulation
-- **Server Commands**: `reload`, `save-all`, `stop` - Server lifecycle management
-
-### Enhanced Chat Use Cases (v1.0.1)
-- **Discord Bot Integration**: Bridge Discord channels with Minecraft chat
-- **Slack Notifications**: Send server alerts to team Slack channels
-- **Multi-Platform Chat**: Unified chat across Discord, Slack, and in-game
-- **Automated Announcements**: System messages with appropriate formatting
-- **Cross-Platform Moderation**: Moderated messages from external platforms
+### Validated Commands
+- **Chat Commands**: `say`, `tellraw`, `title`
+- **Player Management**: `op`, `deop`, `kick`, `ban`
+- **Game Control**: `gamemode`, `time`, `weather`
+- **World Management**: `tp`, `give`, `setblock`
+- **Server Commands**: `reload`, `save-all`, `stop`
 
 ## 🔒 Security Features
 
@@ -288,7 +254,7 @@ make clean
 make build
 
 # Output location
-build/libs/minaret-1.0.1.jar
+build/libs/minaret-1.0.0.jar
 ```
 
 ### Development Environment
@@ -301,40 +267,36 @@ build/libs/minaret-1.0.1.jar
 ```
 minaret/
 ├── src/main/java/com/minaret/
-│   ├── MinaretMod.java           # Main mod class
-│   ├── WebSocketServer.java      # WebSocket implementation
-│   ├── SimpleJson.java           # JSON parser/generator
-│   └── MinaretConfig.java        # Configuration management
+│   ├── MinaretMod.java                  # Mod entry point, registries, lifecycle
+│   ├── WebSocketServer.java             # RFC 6455 WebSocket server
+│   ├── SimpleJson.java                  # Flat JSON parser/generator
+│   ├── MinaretConfig.java               # NeoForge config (websocket, auth)
+│   ├── Compat.java                      # Cross-version reflection utilities
+│   ├── SpawnerAgitatorBlock.java        # Spawner agitator block (event dispatch)
+│   ├── SpawnerAgitatorBlockEntity.java  # Spawner agitator BE (bind/accelerate)
+│   ├── ChunkLoaderBlock.java            # Chunk loader block (force/unforce)
+│   ├── ChunkLoaderBlockEntity.java      # Chunk loader BE (minimal)
+│   ├── ChunkLoaderData.java             # Chunk loader position persistence
+│   ├── ChordConfig.java                 # Chord key JSON config
+│   ├── MartialLightningEffect.java      # Martial lightning mob effect
+│   ├── MartialLightningHandler.java     # Martial lightning event handler
+│   ├── HomingArcheryEffect.java         # Homing archery mob effect
+│   ├── HomingArcheryHandler.java        # Homing archery event handler
+│   ├── StreamerProtectEffect.java       # Streamer protect mob effect
+│   └── client/
+│       └── ChordKeyHandler.java         # Trie-based chord key state machine
 ├── src/main/resources/META-INF/
-│   └── neoforge.mods.toml        # Mod metadata
-├── build.gradle                  # Build configuration
-├── REQUIREMENTS.md               # Technical requirements
-├── websocket-tester.html         # Browser testing tool
-└── MEMO.md                       # This document
+│   └── neoforge.mods.toml              # Mod metadata
+├── versions/
+│   ├── 1.21.1/                          # MC 1.21.1 subproject
+│   └── 1.21.11/                         # MC 1.21.11 subproject
+├── build.gradle                         # Multi-version build config
+├── SPEC.md                              # Technical specification
+├── MEMO.md                              # This document
+└── README.md                            # User-facing documentation
 ```
 
 ## 📋 Issue Resolution History
-
-### ✅ v1.0.2 - JSON Comma Parsing Fix (RESOLVED)
-- **Problem**: Messages with commas in values (e.g., `"word, word"`) were incorrectly parsed
-- **Root Cause**: SimpleJson parser used `json.split(",")` which split on ALL commas, including those inside string values
-- **Example**: `{"message": "hello, world"}` → incorrectly split into `"message": "hello` and ` world"`
-- **Solution**: Implemented proper character-by-character JSON parsing that respects quoted strings and escape sequences
-- **Fix Details**: 
-  - ✅ Proper quote tracking with escape sequence handling
-  - ✅ Character-by-character parsing instead of naive string splitting
-  - ✅ Robust handling of escaped quotes (`\"`) within strings
-  - ✅ Comprehensive testing with various comma scenarios
-- **Result**: Messages like `{"message": "word, word"}` now correctly parse with full value preserved
-- **Status**: **FULLY RESOLVED** ✅
-
-### ✅ v1.0.1 - Enhanced Chat Messaging (LATEST)
-- **Added**: Dynamic chat message formatting based on user/chat fields
-- **Feature**: Anonymous messages display as `§8⊞ §7message` (empty sign style)
-- **Feature**: User messages display as `§f<user> message`
-- **Feature**: Chat-sourced messages display as `§7[chat] §f<user> message`
-- **API**: New optional `user` and `chat` fields in message JSON
-- **Result**: Better integration with external chat systems (Discord, Slack, etc.)
 
 ### ✅ Language Provider Issue (RESOLVED)
 - **Problem**: `modLoader = "neoforge"` incompatible with NeoForge 21.1+
@@ -356,25 +318,43 @@ minaret/
 - **Solution**: Using brigadier dispatcher directly to get numeric result codes
 - **Result**: Proper success/failure detection with detailed error responses
 
+### Block Subsystem Issues (RESOLVED)
+
+**setRemoved() infinite loop during shutdown:**
+- **Problem**: `setRemoved()` in block entities did world access (`getBlockState`, `getBlockEntity`, `setChunkForced`). During chunk unload, this triggered chunk reload, which called `setRemoved()` again — infinite loop causing server hang at "Saving worlds".
+- **Solution**: Moved all cleanup to `playerWillDestroy()` on the Block class. `setRemoved()` is never overridden.
+
+**Spawner always-active during shutdown:**
+- **Problem**: Setting `requiredPlayerRange = -1` makes the spawner always active, bypassing the player distance check. During shutdown, the server's `while(hasWork())` save loop never terminates because the spawner keeps generating work.
+- **Solution**: Use `requiredPlayerRange = 32767` instead. Large enough to be effectively infinite during gameplay, but stops naturally when all players disconnect during shutdown.
+
+**Cross-version SavedData incompatibility:**
+- **Problem**: `SavedDataType` class doesn't exist in 1.21.1. `CompoundTag.getList()` returns `ListTag` in 1.21.1 but `Optional<ListTag>` in 1.21.11.
+- **Solution**: Plain text file format (`X Y Z` per line) with atomic save, avoiding SavedData entirely.
+
+**Cross-version neighborChanged incompatibility:**
+- **Problem**: `neighborChanged` method signature changed from `BlockPos neighborPos` in 1.21.1 to `Orientation` in 1.21.11. Can't override in shared source.
+- **Solution**: Spawner-placed-after-agitator detection deferred to chunk reload (`onLoad`). `onNeighborChanged()` method exists on the block entity for future use.
+
 ## 🔄 Future Enhancement Roadmap
 
-### Priority 1 (Security & Performance)
-- **Rate Limiting**: Connection and message rate limiting for DoS protection
-- **TLS/SSL Support**: Encrypted WebSocket connections (WSS) for production
-- **IP Whitelisting**: Restrict connections by source IP address
-- **Advanced Logging**: Structured logging with rotation and retention
+### Priority 1 (Security & Stability)
+- **Rate Limiting**: Connection and message rate limiting
+- **TLS/SSL Support**: Encrypted WebSocket connections (WSS)
+- **IP Whitelisting**: Restrict connections by source IP
+- **Advanced Logging**: Structured logging with rotation
 
-### Priority 2 (Protocol & Integration)
-- **Event Broadcasting**: Push server events to WebSocket clients (player join/leave, deaths, etc.)
-- **Batch Commands**: Execute multiple commands in single request for efficiency
-- **Message Queuing**: Async message processing for better performance under load
-- **WebSocket Compression**: Deflate extension support for bandwidth optimization
+### Priority 2 (Features & Usability)
+- **Event Broadcasting**: Push server events to WebSocket clients
+- **Player Management**: Real-time player join/leave notifications  
+- **Batch Commands**: Execute multiple commands in single request
+- **Message Queuing**: Async message processing for better performance
 
-### Priority 3 (Advanced Features)
+### Priority 3 (Integration & Extensibility)
 - **Plugin API**: Allow other mods to extend WebSocket functionality
-- **World Data API**: Real-time world state information (player positions, inventory, etc.)
-- **Advanced Authentication**: JWT or OAuth integration for enterprise use
-- **Binary Messages**: Support for binary WebSocket frames for data transfer
+- **World Data API**: Real-time world state information
+- **Advanced Authentication**: JWT or OAuth integration
+- **WebSocket Compression**: Deflate extension support
 
 ## 📚 Documentation Status
 
@@ -392,18 +372,15 @@ minaret/
 
 ## 🎯 Project Completion Status
 
-**Overall Progress**: ✅ **100% COMPLETE (v1.0.2)**
+**Overall Progress**: ✅ **100% COMPLETE**
 
-- ✅ **Core Requirements**: All functional requirements implemented and enhanced
-- ✅ **Enhanced Chat**: Dynamic formatting with user/chat field support
-- ✅ **Cross-Platform**: Native Discord/Slack/external chat integration
-- ✅ **Security Features**: Authentication and authorization fully operational
-- ✅ **Error Handling**: Comprehensive error detection and detailed reporting
-- ✅ **Performance**: Exceeds all performance targets with minimal overhead
-- ✅ **Documentation**: Complete technical and user documentation
+- ✅ **Core Requirements**: All functional requirements implemented
+- ✅ **Security Features**: Authentication and authorization working
+- ✅ **Error Handling**: Comprehensive error detection and reporting
+- ✅ **Performance**: Meets all performance targets
+- ✅ **Documentation**: Technical documentation complete
 - ✅ **Testing**: Manual testing completed, all features validated
-- ✅ **JSON Parsing**: Comma handling in strings fully fixed and tested
 
-**Production Readiness**: ✅ **PRODUCTION READY (v1.0.2)**
+**Production Readiness**: ✅ **READY FOR PUBLISHING**
 
-The Minaret mod v1.0.2 fixes a critical JSON parsing bug where messages containing commas were incorrectly parsed. The enhanced parser now properly handles quoted strings with escape sequences, ensuring reliable message processing for all use cases.
+The Minaret mod is fully functional and completely prepared for public release. All core features are implemented, tested, and documented. The project includes comprehensive documentation, examples, and build system ready for distribution.

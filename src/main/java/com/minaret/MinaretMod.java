@@ -1,168 +1,232 @@
 package com.minaret;
 
-import com.mojang.brigadier.arguments.StringArgumentType;
-import net.minecraft.commands.Commands;
+import java.util.function.Supplier;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.material.MapColor;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-@Mod(MinaretMod.MODID)
+@Mod(MinaretMod.MOD_ID)
 public class MinaretMod {
 
-    public static final String MODID = "minaret";
+    public static final String MOD_ID = "minaret";
     public static final Logger LOGGER = LogManager.getLogger();
 
     public static final DeferredRegister<MobEffect> MOB_EFFECTS =
-        DeferredRegister.create(BuiltInRegistries.MOB_EFFECT, MODID);
+        DeferredRegister.create(BuiltInRegistries.MOB_EFFECT, MOD_ID);
 
     public static final Holder<MobEffect> MARTIAL_LIGHTNING =
         MOB_EFFECTS.register("martial_lightning", MartialLightningEffect::new);
-
     public static final Holder<MobEffect> STREAMER_PROTECT =
         MOB_EFFECTS.register("streamer_protect", StreamerProtectEffect::new);
-
     public static final Holder<MobEffect> HOMING_ARCHERY = MOB_EFFECTS.register(
         "homing_archery",
         HomingArcheryEffect::new
     );
 
+    // ── Blocks ──────────────────────────────────────────────────────────
+
+    public static final DeferredRegister<Block> BLOCKS =
+        DeferredRegister.create(BuiltInRegistries.BLOCK, MOD_ID);
+    public static final DeferredRegister<Item> ITEMS = DeferredRegister.create(
+        BuiltInRegistries.ITEM,
+        MOD_ID
+    );
+
+    @SuppressWarnings("unchecked")
+    public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
+        DeferredRegister.create(
+            (net.minecraft.core.Registry<
+                BlockEntityType<?>
+            >) (net.minecraft.core.Registry<
+                ?
+            >) BuiltInRegistries.BLOCK_ENTITY_TYPE,
+            MOD_ID
+        );
+
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
+        DeferredRegister.create(BuiltInRegistries.CREATIVE_MODE_TAB, MOD_ID);
+
+    public static final Supplier<ChunkLoaderBlock> CHUNK_LOADER_BLOCK =
+        BLOCKS.register("chunk_loader", () ->
+            new ChunkLoaderBlock(
+                Compat.setBlockId(
+                    BlockBehaviour.Properties.of()
+                        .mapColor(MapColor.COLOR_GREEN)
+                        .sound(SoundType.METAL),
+                    "chunk_loader"
+                )
+            )
+        );
+    public static final Supplier<SpawnerAgitatorBlock> SPAWNER_AGITATOR_BLOCK =
+        BLOCKS.register("spawner_agitator", () ->
+            new SpawnerAgitatorBlock(
+                Compat.setBlockId(
+                    BlockBehaviour.Properties.of()
+                        .mapColor(MapColor.COLOR_YELLOW)
+                        .sound(SoundType.METAL),
+                    "spawner_agitator"
+                )
+            )
+        );
+
+    public static final Supplier<BlockItem> CHUNK_LOADER_ITEM = ITEMS.register(
+        "chunk_loader",
+        () ->
+            new BlockItem(
+                CHUNK_LOADER_BLOCK.get(),
+                Compat.setItemId(new Item.Properties(), "chunk_loader")
+            )
+    );
+    public static final Supplier<BlockItem> SPAWNER_AGITATOR_ITEM =
+        ITEMS.register("spawner_agitator", () ->
+            new BlockItem(
+                SPAWNER_AGITATOR_BLOCK.get(),
+                Compat.setItemId(new Item.Properties(), "spawner_agitator")
+            )
+        );
+
+    @SuppressWarnings("unchecked")
+    public static final Supplier<
+        BlockEntityType<ChunkLoaderBlockEntity>
+    > CHUNK_LOADER_BE = BLOCK_ENTITIES.register("chunk_loader", () ->
+        Compat.createBlockEntityType(
+            ChunkLoaderBlockEntity::new,
+            CHUNK_LOADER_BLOCK.get()
+        )
+    );
+
+    @SuppressWarnings("unchecked")
+    public static final Supplier<
+        BlockEntityType<SpawnerAgitatorBlockEntity>
+    > SPAWNER_AGITATOR_BE = BLOCK_ENTITIES.register("spawner_agitator", () ->
+        Compat.createBlockEntityType(
+            SpawnerAgitatorBlockEntity::new,
+            SPAWNER_AGITATOR_BLOCK.get()
+        )
+    );
+
+    public static final Supplier<CreativeModeTab> MINARET_TAB =
+        CREATIVE_TABS.register("minaret", () ->
+            CreativeModeTab.builder()
+                .title(Component.translatable("itemGroup.minaret"))
+                .icon(() -> CHUNK_LOADER_ITEM.get().getDefaultInstance())
+                .displayItems((params, output) -> {
+                    output.accept(CHUNK_LOADER_ITEM.get());
+                    output.accept(SPAWNER_AGITATOR_ITEM.get());
+                })
+                .build()
+        );
+
     private static WebSocketServer webSocketServer;
 
     public MinaretMod(IEventBus modEventBus, ModContainer modContainer) {
-        modEventBus.addListener(this::commonSetup);
-        modContainer.registerConfig(ModConfig.Type.SERVER, MinaretConfig.SPEC);
+        modContainer.registerConfig(
+            ModConfig.Type.SERVER,
+            MinaretConfig.CONFIG_SPEC
+        );
         MOB_EFFECTS.register(modEventBus);
+        BLOCKS.register(modEventBus);
+        ITEMS.register(modEventBus);
+        BLOCK_ENTITIES.register(modEventBus);
+        CREATIVE_TABS.register(modEventBus);
 
-        NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
-        NeoForge.EVENT_BUS.addListener(this::onServerStarting);
-        NeoForge.EVENT_BUS.addListener(this::onServerStopping);
+        NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.event.RegisterCommandsEvent e) ->
+                MinaretCommands.register(e.getDispatcher())
+        );
+        NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.event.server.ServerStartingEvent e) ->
+                onServerStarting(e)
+        );
+        NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.event.server.ServerStoppingEvent e) ->
+                onServerStopping(e)
+        );
         NeoForge.EVENT_BUS.addListener(
             MartialLightningHandler::onLivingIncomingDamage
         );
         NeoForge.EVENT_BUS.addListener(HomingArcheryHandler::onArrowLoose);
         NeoForge.EVENT_BUS.addListener(HomingArcheryHandler::onLivingDamage);
+
+        if (Compat.isClient()) {
+            com.minaret.client.ChordKeyHandler.init(modEventBus);
+        }
     }
 
-    private void commonSetup(final FMLCommonSetupEvent event) {
-        LOGGER.info("🗼 Minaret mod loading...");
-    }
+    private void onServerStarting(
+        net.neoforged.neoforge.event.server.ServerStartingEvent event
+    ) {
+        var server = event.getServer();
+        for (var level : server.getAllLevels()) {
+            ChunkLoaderData.get(level).forceAll(level);
+        }
 
-    private void onRegisterCommands(RegisterCommandsEvent event) {
-        event
-            .getDispatcher()
-            .register(
-                Commands.literal("minaret")
-                    .requires(source -> {
-                        try {
-                            // 1.21.1: hasPermission(int) exists
-                            return (boolean) source
-                                .getClass()
-                                .getMethod("hasPermission", int.class)
-                                .invoke(source, 4);
-                        } catch (Exception e) {
-                            // 1.21.11+: fall back to server-level check
-                            return source
-                                .getServer()
-                                .getCommands()
-                                .getDispatcher()
-                                .getRoot()
-                                .canUse(source);
-                        }
-                    })
-                    .then(
-                        Commands.literal("exec").then(
-                            Commands.argument(
-                                "json",
-                                StringArgumentType.greedyString()
-                            ).executes(ctx -> {
-                                String json = StringArgumentType.getString(
-                                    ctx,
-                                    "json"
-                                );
-                                WebSocketServer.processMessage(
-                                    json,
-                                    ctx.getSource().getServer(),
-                                    response ->
-                                        ctx
-                                            .getSource()
-                                            .sendSuccess(
-                                                () ->
-                                                    Component.literal(response),
-                                                false
-                                            )
-                                );
-                                return 1;
-                            })
-                        )
-                    )
-            );
-    }
-
-    private void onServerStarting(ServerStartingEvent event) {
         try {
             String wsUrl = MinaretConfig.WEBSOCKET_URL.get();
-            String username = MinaretConfig.AUTH_USERNAME.get();
-            String password = MinaretConfig.AUTH_PASSWORD.get();
+            String host = parseHost(wsUrl);
+            int port = parsePort(wsUrl);
 
-            LOGGER.info("🔧 Configured WebSocket URL: {}", wsUrl);
-
-            // Parse URL to extract host and port
-            String[] parts = wsUrl.split(":");
-            String host = parts.length > 0 ? parts[0] : "localhost";
-            int port = parts.length > 1 ? Integer.parseInt(parts[1]) : 8765;
-
-            // Start WebSocket server
             webSocketServer = new WebSocketServer(
                 host,
                 port,
-                event.getServer(),
-                username,
-                password
+                server,
+                MinaretConfig.AUTH_USERNAME.get(),
+                MinaretConfig.AUTH_PASSWORD.get()
             );
             webSocketServer.start();
-
-            LOGGER.info("🚀 WebSocket server started on {}:{}", host, port);
-            if (!username.isEmpty()) {
-                LOGGER.info("🔐 Authentication enabled for user: {}", username);
-                LOGGER.info(
-                    "📡 Connect with Authorization: Basic <base64({}:{})>",
-                    username,
-                    "*".repeat(password.length())
-                );
-            } else {
-                LOGGER.info("🌐 No authentication required");
-            }
-            LOGGER.info("📡 Ready for WebSocket connections! Protocol:");
-            LOGGER.info("   💬 Chat: {\"message\": \"Hello world!\"}");
-            LOGGER.info(
-                "   ⚡ Command: {\"command\": \"say Hello from WebSocket!\"}"
-            );
+            LOGGER.info("WebSocket server started on {}:{}", host, port);
         } catch (Exception e) {
-            LOGGER.error("❌ Failed to start WebSocket server", e);
+            LOGGER.error("Failed to start WebSocket server", e);
         }
     }
 
-    private void onServerStopping(ServerStoppingEvent event) {
+    private void onServerStopping(
+        net.neoforged.neoforge.event.server.ServerStoppingEvent event
+    ) {
+        ChunkLoaderData.reset();
         if (webSocketServer != null) {
             try {
                 webSocketServer.stop();
-                LOGGER.info("🛑 WebSocket server stopped");
+                LOGGER.info("WebSocket server stopped");
             } catch (Exception e) {
-                LOGGER.error("❌ Error stopping WebSocket server", e);
+                LOGGER.error("Error stopping WebSocket server", e);
             }
         }
+    }
+
+    private static String parseHost(String url) {
+        int colon = url.lastIndexOf(':');
+        return colon > 0
+            ? url.substring(0, colon)
+            : (url.isEmpty() ? "localhost" : url);
+    }
+
+    private static int parsePort(String url) {
+        int colon = url.lastIndexOf(':');
+        if (colon >= 0 && colon + 1 < url.length()) {
+            try {
+                return Integer.parseInt(url.substring(colon + 1));
+            } catch (NumberFormatException e) {
+                LOGGER.warn("Invalid port in '{}', using 8765", url);
+            }
+        }
+        return 8765;
     }
 }

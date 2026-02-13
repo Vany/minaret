@@ -1,30 +1,53 @@
 # 🗼 Minaret
 
 [![NeoForge](https://img.shields.io/badge/NeoForge-21.1.172+-orange.svg)](https://neoforged.net/)
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green.svg)](https://minecraft.net/)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1%20%7C%201.21.11-green.svg)](https://minecraft.net/)
 [![Java](https://img.shields.io/badge/Java-21+-blue.svg)](https://openjdk.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Production-ready WebSocket API bridge for Minecraft NeoForge servers** 🚀
+**NeoForge mod with WebSocket API, custom blocks, mob effects, and chord keys**
 
-Minaret enables external applications to interact with your Minecraft server through a secure WebSocket connection. Send chat messages, execute commands, and integrate your server with external tools - all in real-time.
+Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
+- **WebSocket API** for external application integration
+- **Spawner Agitator** block that enhances mob spawners
+- **Chunk Loader** block that keeps chunks loaded
+- **Custom mob effects** (Martial Lightning, Homing Archery, Streamer Protect)
+- **Chord keys** (emacs-style key sequences for keybinding combos)
 
-## ✨ Features
+## Features
 
-🔌 **WebSocket API** - RFC 6455 compliant WebSocket server with zero external dependencies  
-🔐 **Secure Authentication** - Optional HTTP Basic Authentication for access control  
-💬 **Chat Integration** - Broadcast messages to all players with proper formatting  
-⚡ **Command Execution** - Execute server commands with full OP permissions  
-🎯 **Real-time Response** - JSON-based protocol with comprehensive error handling  
-🛡️ **Thread-safe** - Non-blocking operations with proper resource management  
-📊 **Performance Optimized** - Sub-100ms latency, minimal memory footprint  
-⚙️ **Configurable** - Easy configuration via NeoForge config system  
+**WebSocket API**
+- RFC 6455 compliant WebSocket server, zero external dependencies
+- Optional HTTP Basic Authentication
+- Chat broadcast, command execution, effect queries via JSON
+- Sub-100ms latency, thread-safe
+
+**Spawner Agitator**
+- Place above a mob spawner to increase its range and speed
+- Stack multiple agitators for faster spawning
+- Event-driven architecture with minimal per-tick overhead
+- Clean shutdown behavior (no server hang)
+
+**Chunk Loader**
+- Place to keep the chunk force-loaded
+- Persists across server restarts (atomic text file save)
+- Automatic re-activation on server start
+
+**Mob Effects**
+- Martial Lightning: enhanced melee with AoE and tier-based damage
+- Homing Archery: bow shots fire homing shulker bullets
+- Streamer Protect: indicator effect for external integration
+
+**Chord Keys** (client-side)
+- Emacs-style key sequences (e.g. `f>1`, `f>f>1`)
+- 200 virtual keybinding slots, assignable in Controls
+- Trie-based state machine with timeout and overlay
 
 ## 🚀 Quick Start
 
 ### Installation
 
-1. **Download** the latest `minaret-1.0.1.jar` from releases
+1. **Download** the latest `minaret-1.0.0.jar` from releases
 2. **Place** the jar in your server's `mods/` folder
 3. **Start** your NeoForge 1.21.1 server
 4. **Configure** via `config/minaret-server.toml` (optional)
@@ -259,21 +282,21 @@ wscat -c ws://localhost:8765 -H \"Authorization: Basic $(echo -n 'user:pass' | b
 ### Requirements
 
 - **Java:** 21+ (OpenJDK recommended)
-- **NeoForge:** 21.1.172+
-- **Minecraft:** 1.21.1
+- **NeoForge:** 21.1.172+ (1.21.1) or 21.11.38-beta+ (1.21.11)
+- **Minecraft:** 1.21.1 or 1.21.11
 - **Gradle:** 8.8+
 
 ### Building
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd minaret
-
-# Build mod
+# Build all versions
 make build
 
-# Output: build/libs/minaret-1.0.1.jar
+# Build specific version
+make build-1.21.1
+make build-1.21.11
+
+# Output: versions/*/build/libs/minaret-*.jar
 ```
 
 ### Project Structure
@@ -281,15 +304,27 @@ make build
 ```
 minaret/
 ├── src/main/java/com/minaret/
-│   ├── MinaretMod.java           # 🎯 Main mod entry point
-│   ├── WebSocketServer.java      # 🔌 WebSocket implementation  
-│   ├── SimpleJson.java           # 📄 JSON parser/generator
-│   └── MinaretConfig.java        # ⚙️ Configuration management
+│   ├── MinaretMod.java                  # Mod entry point, registries, lifecycle
+│   ├── WebSocketServer.java             # RFC 6455 WebSocket server
+│   ├── SimpleJson.java                  # Flat JSON parser/generator
+│   ├── MinaretConfig.java               # NeoForge config
+│   ├── Compat.java                      # Cross-version reflection utilities
+│   ├── SpawnerAgitatorBlock.java        # Spawner agitator block
+│   ├── SpawnerAgitatorBlockEntity.java  # Spawner agitator logic
+│   ├── ChunkLoaderBlock.java            # Chunk loader block
+│   ├── ChunkLoaderBlockEntity.java      # Chunk loader block entity
+│   ├── ChunkLoaderData.java             # Chunk loader persistence
+│   ├── ChordConfig.java                 # Chord key config
+│   ├── *Effect.java / *Handler.java     # Mob effects and handlers
+│   └── client/
+│       └── ChordKeyHandler.java         # Chord key state machine
 ├── src/main/resources/META-INF/
-│   └── neoforge.mods.toml        # 📋 Mod metadata
-├── REQUIREMENTS.md               # 📋 Technical specifications
-├── build.gradle                  # 🏗️ Build configuration
-└── README.md                     # 📖 This document
+│   └── neoforge.mods.toml              # Mod metadata
+├── versions/
+│   ├── 1.21.1/                          # MC 1.21.1 subproject
+│   └── 1.21.11/                         # MC 1.21.11 subproject
+├── build.gradle                         # Multi-version build config
+└── README.md                            # This document
 ```
 
 ## 🤝 Support
@@ -322,30 +357,10 @@ minaret/
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## 🎯 Use Cases
+## Use Cases
 
-**Server Administration**
-- Remote server management tools
-- Automated maintenance scripts
-- Command scheduling and automation
-
-**Player Experience**  
-- Discord bot integration
-- Web-based server control panels
-- Mobile app server interaction
-
-**Content Creation**
-- Streaming overlays with server data
-- YouTube/Twitch integration
-- Real-time server event broadcasting
-
-**Development & Testing**
-- Automated testing frameworks
-- CI/CD server deployment
-- Development tool integration
-
----
-
-**⭐ Star this project if you find it useful!**
-
-Made with ❤️ for the Minecraft modding community
+- Remote server management via WebSocket (Discord bots, web panels, mobile apps)
+- Mob farm automation with spawner agitator stacks
+- Persistent chunk loading for farms, machines, and redstone
+- Streaming integration via streamer protect effect
+- Custom keybinding combos for mod-heavy clients

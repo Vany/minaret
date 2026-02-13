@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "entries": [
+    "minaret:add_fortress_loot",
+    "minaret:add_bastion_treasure_loot",
+    "minaret:add_bastion_other_loot",
+    "minaret:add_bastion_bridge_loot",
+    "minaret:add_bastion_hoglin_loot"
+  ]
+}

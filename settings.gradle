@@ -6,3 +6,6 @@ pluginManagement {
 }
 
 rootProject.name = 'minaret'
+
+include 'versions:1.21.1'
+include 'versions:1.21.11'

@@ -1,0 +1,8 @@
+{
+  "parent": "block/cube_bottom_top",
+  "textures": {
+    "top": "minaret:block/spawner_agitator_top",
+    "bottom": "minaret:block/spawner_agitator_bottom",
+    "side": "minaret:block/spawner_agitator"
+  }
+}

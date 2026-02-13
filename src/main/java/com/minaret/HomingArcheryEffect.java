@@ -9,7 +9,9 @@ import net.minecraft.world.effect.MobEffectCategory;
  */
 public class HomingArcheryEffect extends MobEffect {
 
+    private static final int COLOR_PURPLE = 0x9B30FF;
+
     public HomingArcheryEffect() {
-        super(MobEffectCategory.BENEFICIAL, 0x9B30FF);
+        super(MobEffectCategory.BENEFICIAL, COLOR_PURPLE);
     }
 }

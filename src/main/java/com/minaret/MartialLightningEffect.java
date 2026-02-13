@@ -13,7 +13,9 @@ import net.minecraft.world.effect.MobEffectCategory;
  */
 public class MartialLightningEffect extends MobEffect {
 
+    private static final int COLOR_DEEP_SKY_BLUE = 0x00BFFF;
+
     public MartialLightningEffect() {
-        super(MobEffectCategory.BENEFICIAL, 0x00BFFF);
+        super(MobEffectCategory.BENEFICIAL, COLOR_DEEP_SKY_BLUE);
     }
 }
