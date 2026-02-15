@@ -2,15 +2,18 @@ package com.minaret;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 
 /**
- * All /minaret subcommands: exec, addkey, delkey, listkeys, listactions.
+ * All /minaret subcommands: exec, addkey, addcommand, delkey, listkeys, listactions.
  */
 public final class MinaretCommands {
+
+    private static final int OP_LEVEL = 4;
 
     private MinaretCommands() {}
 
@@ -19,127 +22,144 @@ public final class MinaretCommands {
     ) {
         dispatcher.register(
             Commands.literal("minaret")
-                .requires(source -> Compat.hasPermission(source, 4))
-                .then(
-                    Commands.literal("exec").then(
-                        Commands.argument(
-                            "json",
-                            StringArgumentType.greedyString()
-                        ).executes(ctx ->
-                            exec(
-                                ctx.getSource(),
-                                StringArgumentType.getString(ctx, "json")
-                            )
-                        )
-                    )
-                )
-                .then(
-                    Commands.literal("addkey").then(
-                        Commands.argument(
-                            "args",
-                            StringArgumentType.greedyString()
-                        )
-                            .suggests((ctx, builder) -> {
-                                String input = builder.getRemaining();
-                                if (input.contains(" ")) {
-                                    int sp = input.indexOf(' ');
-                                    return SharedSuggestionProvider.suggest(
-                                        com.minaret.client.ChordKeyHandler.getAllKeyMappingNames(),
-                                        builder.createOffset(
-                                            builder.getStart() + sp + 1
-                                        )
-                                    );
-                                }
-                                return builder.buildFuture();
-                            })
-                            .executes(ctx -> {
-                                String args = StringArgumentType.getString(
-                                    ctx,
-                                    "args"
-                                );
-                                int sp = args.indexOf(' ');
-                                if (sp < 0) {
-                                    ctx
-                                        .getSource()
-                                        .sendFailure(
-                                            Component.literal(
-                                                "Usage: /minaret addkey <sequence> <action>"
-                                            )
-                                        );
-                                    return 0;
-                                }
-                                return addKey(
-                                    ctx.getSource(),
-                                    args.substring(0, sp),
-                                    args.substring(sp + 1).trim()
-                                );
-                            })
-                    )
-                )
-                .then(
-                    Commands.literal("delkey").then(
-                        Commands.argument(
-                            "sequence",
-                            StringArgumentType.greedyString()
-                        ).executes(ctx ->
-                            delKey(
-                                ctx.getSource(),
-                                StringArgumentType.getString(ctx, "sequence")
-                            )
-                        )
-                    )
-                )
-                .then(
-                    Commands.literal("listkeys").executes(ctx ->
-                        listKeys(ctx.getSource())
-                    )
-                )
-                .then(
-                    Commands.literal("addcommand").then(
-                        Commands.argument(
-                            "args",
-                            StringArgumentType.greedyString()
-                        ).executes(ctx -> {
-                            String args = StringArgumentType.getString(
-                                ctx,
-                                "args"
-                            );
-                            int sp = args.indexOf(' ');
-                            if (sp < 0) {
-                                ctx
-                                    .getSource()
-                                    .sendFailure(
-                                        Component.literal(
-                                            "Usage: /minaret addcommand <sequence> <json>"
-                                        )
-                                    );
-                                return 0;
-                            }
-                            return addCommand(
-                                ctx.getSource(),
-                                args.substring(0, sp),
-                                args.substring(sp + 1).trim()
-                            );
-                        })
-                    )
-                )
-                .then(
-                    Commands.literal("listactions")
-                        .executes(ctx -> listActions(ctx.getSource()))
-                        .then(
-                            Commands.argument(
-                                "filter",
-                                StringArgumentType.greedyString()
-                            ).executes(ctx ->
-                                listActions(
-                                    ctx.getSource(),
-                                    StringArgumentType.getString(ctx, "filter")
-                                )
-                            )
-                        )
-                )
+                .requires(source -> Compat.hasPermission(source, OP_LEVEL))
+                .then(execCommand())
+                .then(addKeyCommand())
+                .then(addCommandCommand())
+                .then(delKeyCommand())
+                .then(listKeysCommand())
+                .then(listActionsCommand())
         );
     }
+
+    // ── Command definitions ─────────────────────────────────────────────
+
+    private static LiteralArgumentBuilder<CommandSourceStack> execCommand() {
+        return Commands.literal("exec").then(
+            Commands.argument(
+                "json",
+                StringArgumentType.greedyString()
+            ).executes(ctx ->
+                exec(ctx.getSource(), StringArgumentType.getString(ctx, "json"))
+            )
+        );
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> addKeyCommand() {
+        return Commands.literal("addkey").then(
+            Commands.argument("args", StringArgumentType.greedyString())
+                .suggests((ctx, builder) -> {
+                    String input = builder.getRemaining();
+                    if (input.contains(" ")) {
+                        int sp = input.indexOf(' ');
+                        return SharedSuggestionProvider.suggest(
+                            com.minaret.client.ChordKeyHandler.getAllKeyMappingNames(),
+                            builder.createOffset(builder.getStart() + sp + 1)
+                        );
+                    }
+                    return builder.buildFuture();
+                })
+                .executes(ctx -> {
+                    String[] parts = splitArgs(
+                        ctx.getSource(),
+                        StringArgumentType.getString(ctx, "args"),
+                        "Usage: /minaret addkey <sequence> <action>"
+                    );
+                    return parts != null
+                        ? addChord(
+                              ctx.getSource(),
+                              parts[0],
+                              ChordConfig.KEY_PREFIX + parts[1]
+                          )
+                        : 0;
+                })
+        );
+    }
+
+    private static LiteralArgumentBuilder<
+        CommandSourceStack
+    > addCommandCommand() {
+        return Commands.literal("addcommand").then(
+            Commands.argument(
+                "args",
+                StringArgumentType.greedyString()
+            ).executes(ctx -> {
+                String[] parts = splitArgs(
+                    ctx.getSource(),
+                    StringArgumentType.getString(ctx, "args"),
+                    "Usage: /minaret addcommand <sequence> <json>"
+                );
+                return parts != null
+                    ? addChord(
+                          ctx.getSource(),
+                          parts[0],
+                          ChordConfig.CMD_PREFIX + parts[1]
+                      )
+                    : 0;
+            })
+        );
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> delKeyCommand() {
+        return Commands.literal("delkey").then(
+            Commands.argument(
+                "sequence",
+                StringArgumentType.greedyString()
+            ).executes(ctx ->
+                delKey(
+                    ctx.getSource(),
+                    StringArgumentType.getString(ctx, "sequence")
+                )
+            )
+        );
+    }
+
+    private static LiteralArgumentBuilder<
+        CommandSourceStack
+    > listKeysCommand() {
+        return Commands.literal("listkeys").executes(ctx ->
+            listKeys(ctx.getSource())
+        );
+    }
+
+    private static LiteralArgumentBuilder<
+        CommandSourceStack
+    > listActionsCommand() {
+        return Commands.literal("listactions")
+            .executes(ctx -> listActions(ctx.getSource(), null))
+            .then(
+                Commands.argument(
+                    "filter",
+                    StringArgumentType.greedyString()
+                ).executes(ctx ->
+                    listActions(
+                        ctx.getSource(),
+                        StringArgumentType.getString(ctx, "filter")
+                    )
+                )
+            );
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    /** Split "sequence rest" on first space, or send failure and return null. */
+    private static String[] splitArgs(
+        CommandSourceStack source,
+        String args,
+        String usage
+    ) {
+        int sp = args.indexOf(' ');
+        if (sp < 0) {
+            source.sendFailure(Component.literal(usage));
+            return null;
+        }
+        return new String[] {
+            args.substring(0, sp),
+            args.substring(sp + 1).trim(),
+        };
+    }
+
+    // ── Handlers ────────────────────────────────────────────────────────
 
     private static int exec(CommandSourceStack source, String json) {
         MessageDispatcher.dispatch(json, source.getServer(), response ->
@@ -148,10 +168,10 @@ public final class MinaretCommands {
         return 1;
     }
 
-    private static int addKey(
+    private static int addChord(
         CommandSourceStack source,
         String sequence,
-        String action
+        String target
     ) {
         String error = com.minaret.client.ChordKeyHandler.validateSequence(
             sequence
@@ -160,12 +180,10 @@ public final class MinaretCommands {
             source.sendFailure(Component.literal(error));
             return 0;
         }
-        String target = ChordConfig.KEY_PREFIX + action;
-        if (!ChordConfig.get().addChord(sequence.toLowerCase(), target)) {
+        String normalized = sequence.toLowerCase();
+        if (!ChordConfig.get().addChord(normalized, target)) {
             source.sendFailure(
-                Component.literal(
-                    "Chord '" + sequence.toLowerCase() + "' already exists"
-                )
+                Component.literal("Chord '" + normalized + "' already exists")
             );
             return 0;
         }
@@ -173,42 +191,7 @@ public final class MinaretCommands {
         source.sendSuccess(
             () ->
                 Component.literal(
-                    "Added chord '" + sequence.toLowerCase() + "' → " + action
-                ),
-            false
-        );
-        return 1;
-    }
-
-    private static int addCommand(
-        CommandSourceStack source,
-        String sequence,
-        String json
-    ) {
-        String error = com.minaret.client.ChordKeyHandler.validateSequence(
-            sequence
-        );
-        if (error != null) {
-            source.sendFailure(Component.literal(error));
-            return 0;
-        }
-        String target = ChordConfig.CMD_PREFIX + json;
-        if (!ChordConfig.get().addChord(sequence.toLowerCase(), target)) {
-            source.sendFailure(
-                Component.literal(
-                    "Chord '" + sequence.toLowerCase() + "' already exists"
-                )
-            );
-            return 0;
-        }
-        com.minaret.client.ChordKeyHandler.rebuildTrie();
-        source.sendSuccess(
-            () ->
-                Component.literal(
-                    "Added chord '" +
-                        sequence.toLowerCase() +
-                        "' → command: " +
-                        json
+                    "Added chord '" + normalized + "' → " + target
                 ),
             false
         );
@@ -256,13 +239,11 @@ public final class MinaretCommands {
                 .append(entry.getValue())
                 .append('\n');
         }
-        String msg = sb.toString().stripTrailing();
-        source.sendSuccess(() -> Component.literal(msg), false);
+        source.sendSuccess(
+            () -> Component.literal(sb.toString().stripTrailing()),
+            false
+        );
         return 1;
-    }
-
-    private static int listActions(CommandSourceStack source) {
-        return listActions(source, null);
     }
 
     private static int listActions(CommandSourceStack source, String filter) {
@@ -287,8 +268,10 @@ public final class MinaretCommands {
         for (String name : names) {
             sb.append("  ").append(name).append('\n');
         }
-        String msg = sb.toString().stripTrailing();
-        source.sendSuccess(() -> Component.literal(msg), false);
+        source.sendSuccess(
+            () -> Component.literal(sb.toString().stripTrailing()),
+            false
+        );
         return 1;
     }
 }

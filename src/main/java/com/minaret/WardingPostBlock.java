@@ -108,53 +108,23 @@ public class WardingPostBlock extends BaseEntityBlock {
     // ── Column helpers ──────────────────────────────────────────────────
 
     static void notifyColumn(Level level, BlockPos pos) {
-        // Walk down to find column base
-        BlockPos base = pos;
-        while (
-            level.getBlockState(base.below()).getBlock() instanceof
-                WardingPostBlock
-        ) {
-            base = base.below();
-        }
-        // Walk up: recalc each post
-        BlockPos check = base;
-        while (
-            level.getBlockState(check).getBlock() instanceof WardingPostBlock
-        ) {
-            if (
-                level.getBlockEntity(check) instanceof WardingPostBlockEntity be
-            ) {
-                be.recalcColumn();
-            }
-            check = check.above();
-        }
+        ColumnHelper.forEachInColumn(
+            level,
+            pos,
+            WardingPostBlock.class,
+            WardingPostBlockEntity.class,
+            WardingPostBlockEntity::recalcColumn
+        );
     }
 
     private static void notifyColumnExcluding(Level level, BlockPos removed) {
-        // Walk down from below removed to find column base
-        BlockPos base = removed.below();
-        while (
-            level.getBlockState(base).getBlock() instanceof WardingPostBlock
-        ) {
-            base = base.below();
-        }
-        // base is now below the column; walk up, skip removed
-        BlockPos check = base.above();
-        while (true) {
-            if (check.equals(removed)) {
-                check = check.above();
-                continue;
-            }
-            if (
-                !(level.getBlockState(check).getBlock() instanceof
-                        WardingPostBlock)
-            ) break;
-            if (
-                level.getBlockEntity(check) instanceof WardingPostBlockEntity be
-            ) {
-                be.recalcColumn(removed);
-            }
-            check = check.above();
-        }
+        ColumnHelper.forEachInColumnExcluding(
+            level,
+            removed,
+            removed,
+            WardingPostBlock.class,
+            WardingPostBlockEntity.class,
+            be -> be.recalcColumn(removed)
+        );
     }
 }

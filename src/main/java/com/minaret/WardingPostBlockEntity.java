@@ -11,6 +11,13 @@ import net.minecraft.world.phys.Vec3;
 
 public class WardingPostBlockEntity extends BlockEntity {
 
+    private static final int TICK_INTERVAL = 4;
+    private static final double RADIUS_PER_POST = 4.0;
+    private static final double VERTICAL_RANGE = 2.5;
+    private static final double PUSH_STRENGTH = 0.5;
+    private static final double PUSH_UPWARD = 0.1;
+    private static final double CENTER_EPSILON = 0.01;
+
     private int tickCounter;
     int cachedColumnHeight = 1;
     boolean isTopOfColumn = true;
@@ -26,18 +33,17 @@ public class WardingPostBlockEntity extends BlockEntity {
         WardingPostBlockEntity be
     ) {
         if (!be.isTopOfColumn) return;
-        if (++be.tickCounter < 4) return;
+        if (++be.tickCounter < TICK_INTERVAL) return;
         be.tickCounter = 0;
 
-        // Horizontal radius = 4 blocks per post in column, vertical ±2
-        double radius = 4.0 * be.cachedColumnHeight + 0.5;
+        double radius = RADIUS_PER_POST * be.cachedColumnHeight + 0.5;
         Vec3 center = Vec3.atCenterOf(pos);
         AABB area = new AABB(
             center.x - radius,
-            center.y - 2.5,
+            center.y - VERTICAL_RANGE,
             center.z - radius,
             center.x + radius,
-            center.y + 2.5,
+            center.y + VERTICAL_RANGE,
             center.z + radius
         );
 
@@ -46,14 +52,12 @@ public class WardingPostBlockEntity extends BlockEntity {
         )) {
             Vec3 dir = mob.position().subtract(center);
             double dist = dir.horizontalDistance();
-            if (dist < 0.01) {
-                // Mob is exactly at center — push in arbitrary direction
+            if (dist < CENTER_EPSILON) {
                 dir = new Vec3(1, 0, 0);
                 dist = 1;
             }
-            // Normalize horizontal, push ~1 block outward
-            double scale = 0.5 / dist;
-            mob.push(dir.x * scale, 0.1, dir.z * scale);
+            double scale = PUSH_STRENGTH / dist;
+            mob.push(dir.x * scale, PUSH_UPWARD, dir.z * scale);
             mob.hurtMarked = true;
         }
     }
