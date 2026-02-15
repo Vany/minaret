@@ -69,7 +69,7 @@ public final class MinaretCommands {
                         ? addChord(
                               ctx.getSource(),
                               parts[0],
-                              ChordConfig.KEY_PREFIX + parts[1]
+                              new ChordTarget.Key(parts[1])
                           )
                         : 0;
                 })
@@ -93,7 +93,7 @@ public final class MinaretCommands {
                     ? addChord(
                           ctx.getSource(),
                           parts[0],
-                          ChordConfig.CMD_PREFIX + parts[1]
+                          new ChordTarget.Command(parts[1])
                       )
                     : 0;
             })
@@ -171,7 +171,7 @@ public final class MinaretCommands {
     private static int addChord(
         CommandSourceStack source,
         String sequence,
-        String target
+        ChordTarget target
     ) {
         String error = com.minaret.client.ChordKeyHandler.validateSequence(
             sequence
@@ -191,7 +191,7 @@ public final class MinaretCommands {
         source.sendSuccess(
             () ->
                 Component.literal(
-                    "Added chord '" + normalized + "' → " + target
+                    "Added chord '" + normalized + "' → " + target.serialize()
                 ),
             false
         );
@@ -236,7 +236,7 @@ public final class MinaretCommands {
                 .append("  ")
                 .append(entry.getKey())
                 .append(" → ")
-                .append(entry.getValue())
+                .append(entry.getValue().serialize())
                 .append('\n');
         }
         source.sendSuccess(

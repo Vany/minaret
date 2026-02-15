@@ -1,6 +1,7 @@
 package com.minaret.client;
 
 import com.minaret.ChordConfig;
+import com.minaret.ChordTarget;
 import com.minaret.Compat;
 import com.minaret.MessageDispatcher;
 import com.minaret.MinaretMod;
@@ -86,15 +87,14 @@ public class ChordKeyHandler {
     }
 
     private static void fireChord(String sequence) {
-        String target = ChordConfig.get().getTarget(sequence);
+        ChordTarget target = ChordConfig.get().getTarget(sequence);
         if (target == null) {
             MinaretMod.LOGGER.warn("Chord '{}' has no target", sequence);
-        } else if (target.startsWith(ChordConfig.KEY_PREFIX)) {
-            fireKeyTarget(target.substring(ChordConfig.KEY_PREFIX.length()));
-        } else if (target.startsWith(ChordConfig.CMD_PREFIX)) {
-            fireCmdTarget(target.substring(ChordConfig.CMD_PREFIX.length()));
         } else {
-            fireKeyTarget(target); // Legacy: bare KeyMapping name
+            switch (target) {
+                case ChordTarget.Key k -> fireKeyTarget(k.mappingName());
+                case ChordTarget.Command c -> fireCmdTarget(c.json());
+            }
         }
         resetState();
     }

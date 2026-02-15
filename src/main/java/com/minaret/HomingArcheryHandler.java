@@ -85,7 +85,12 @@ public class HomingArcheryHandler {
     }
 
     private static Entity findTarget(Player player) {
-        // First try raycast along crosshair
+        Entity target = findTargetByRaycast(player);
+        return target != null ? target : findTargetByProximity(player);
+    }
+
+    /** Exact crosshair raycast — hits the entity directly under the cursor. */
+    private static Entity findTargetByRaycast(Player player) {
         HitResult hit = ProjectileUtil.getHitResultOnViewVector(
             player,
             entity ->
@@ -94,11 +99,13 @@ public class HomingArcheryHandler {
                 entity.isAlive(),
             RAYCAST_RANGE
         );
-        if (hit.getType() == HitResult.Type.ENTITY) {
-            return ((EntityHitResult) hit).getEntity();
-        }
+        return hit.getType() == HitResult.Type.ENTITY
+            ? ((EntityHitResult) hit).getEntity()
+            : null;
+    }
 
-        // Fallback: nearest living entity roughly in look direction
+    /** Cone search — best-aligned living entity roughly in look direction. */
+    private static Entity findTargetByProximity(Player player) {
         Vec3 look = player.getLookAngle();
         Vec3 eyePos = player.getEyePosition();
         AABB searchBox = player.getBoundingBox().inflate(SEARCH_RANGE);

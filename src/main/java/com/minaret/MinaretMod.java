@@ -1,5 +1,6 @@
 package com.minaret;
 
+import java.util.function.Function;
 import java.util.function.Supplier;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -10,6 +11,7 @@ import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -32,15 +34,19 @@ public class MinaretMod {
         DeferredRegister.create(BuiltInRegistries.MOB_EFFECT, MOD_ID);
 
     public static final Holder<MobEffect> MARTIAL_LIGHTNING =
-        MOB_EFFECTS.register("martial_lightning", MartialLightningEffect::new);
+        MOB_EFFECTS.register("martial_lightning", () ->
+            MinaretEffects.marker(0x00BFFF)
+        );
     public static final Holder<MobEffect> STREAMER_PROTECT =
-        MOB_EFFECTS.register("streamer_protect", StreamerProtectEffect::new);
+        MOB_EFFECTS.register("streamer_protect", () ->
+            MinaretEffects.marker(0xFFD700)
+        );
     public static final Holder<MobEffect> HOMING_ARCHERY = MOB_EFFECTS.register(
         "homing_archery",
-        HomingArcheryEffect::new
+        () -> MinaretEffects.marker(0x9B30FF)
     );
 
-    // ── Blocks ──────────────────────────────────────────────────────────
+    // ── Block registration ─────────────────────────────────────────────
 
     public static final DeferredRegister<Block> BLOCKS =
         DeferredRegister.create(BuiltInRegistries.BLOCK, MOD_ID);
@@ -63,95 +69,101 @@ public class MinaretMod {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_TABS =
         DeferredRegister.create(BuiltInRegistries.CREATIVE_MODE_TAB, MOD_ID);
 
-    public static final Supplier<ChunkLoaderBlock> CHUNK_LOADER_BLOCK =
-        BLOCKS.register("chunk_loader", () ->
-            new ChunkLoaderBlock(
-                Compat.setBlockId(
-                    BlockBehaviour.Properties.of()
-                        .mapColor(MapColor.COLOR_GREEN)
-                        .sound(SoundType.METAL),
-                    "chunk_loader"
-                )
-            )
-        );
-    public static final Supplier<SpawnerAgitatorBlock> SPAWNER_AGITATOR_BLOCK =
-        BLOCKS.register("spawner_agitator", () ->
-            new SpawnerAgitatorBlock(
-                Compat.setBlockId(
-                    BlockBehaviour.Properties.of()
-                        .mapColor(MapColor.COLOR_YELLOW)
-                        .sound(SoundType.METAL),
-                    "spawner_agitator"
-                )
-            )
-        );
-    public static final Supplier<WardingPostBlock> WARDING_POST_BLOCK =
-        BLOCKS.register("warding_post", () ->
-            new WardingPostBlock(
-                Compat.setBlockId(
-                    BlockBehaviour.Properties.of()
-                        .mapColor(MapColor.STONE)
-                        .sound(SoundType.STONE)
-                        .strength(2.0f)
-                        .noOcclusion(),
-                    "warding_post"
-                )
-            )
-        );
-
-    public static final Supplier<BlockItem> CHUNK_LOADER_ITEM = ITEMS.register(
-        "chunk_loader",
-        () ->
-            new BlockItem(
-                CHUNK_LOADER_BLOCK.get(),
-                Compat.setItemId(new Item.Properties(), "chunk_loader")
-            )
-    );
-    public static final Supplier<BlockItem> SPAWNER_AGITATOR_ITEM =
-        ITEMS.register("spawner_agitator", () ->
-            new BlockItem(
-                SPAWNER_AGITATOR_BLOCK.get(),
-                Compat.setItemId(new Item.Properties(), "spawner_agitator")
-            )
-        );
-    public static final Supplier<BlockItem> WARDING_POST_ITEM = ITEMS.register(
-        "warding_post",
-        () ->
-            new BlockItem(
-                WARDING_POST_BLOCK.get(),
-                Compat.setItemId(new Item.Properties(), "warding_post")
-            )
-    );
+    /** Bundle of block + item + block entity suppliers created by {@link #registerBlock}. */
+    record BlockBundle<B extends Block, E extends BlockEntity>(
+        Supplier<B> block,
+        Supplier<BlockItem> item,
+        Supplier<BlockEntityType<E>> entity
+    ) {}
 
     @SuppressWarnings("unchecked")
+    private static <B extends Block, E extends BlockEntity> BlockBundle<
+        B,
+        E
+    > registerBlock(
+        String name,
+        Function<BlockBehaviour.Properties, B> blockFactory,
+        BlockEntityType.BlockEntitySupplier<E> entityFactory,
+        BlockBehaviour.Properties props
+    ) {
+        Supplier<B> block = BLOCKS.register(name, () ->
+            blockFactory.apply(Compat.setBlockId(props, name))
+        );
+        Supplier<BlockItem> item = ITEMS.register(name, () ->
+            new BlockItem(
+                block.get(),
+                Compat.setItemId(new Item.Properties(), name)
+            )
+        );
+        Supplier<BlockEntityType<E>> entity = BLOCK_ENTITIES.register(
+            name,
+            () -> Compat.createBlockEntityType(entityFactory, block.get())
+        );
+        return new BlockBundle<>(block, item, entity);
+    }
+
+    private static final BlockBundle<
+        ChunkLoaderBlock,
+        ChunkLoaderBlockEntity
+    > CHUNK_LOADER = registerBlock(
+        "chunk_loader",
+        ChunkLoaderBlock::new,
+        ChunkLoaderBlockEntity::new,
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.COLOR_GREEN)
+            .sound(SoundType.METAL)
+    );
+
+    private static final BlockBundle<
+        SpawnerAgitatorBlock,
+        SpawnerAgitatorBlockEntity
+    > SPAWNER_AGITATOR = registerBlock(
+        "spawner_agitator",
+        SpawnerAgitatorBlock::new,
+        SpawnerAgitatorBlockEntity::new,
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.COLOR_YELLOW)
+            .sound(SoundType.METAL)
+    );
+
+    private static final BlockBundle<
+        WardingPostBlock,
+        WardingPostBlockEntity
+    > WARDING_POST = registerBlock(
+        "warding_post",
+        WardingPostBlock::new,
+        WardingPostBlockEntity::new,
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.STONE)
+            .sound(SoundType.STONE)
+            .strength(2.0f)
+            .noOcclusion()
+    );
+
+    // Public accessors for block/item/entity types used by other classes
+    public static final Supplier<ChunkLoaderBlock> CHUNK_LOADER_BLOCK =
+        CHUNK_LOADER.block;
+    public static final Supplier<BlockItem> CHUNK_LOADER_ITEM =
+        CHUNK_LOADER.item;
     public static final Supplier<
         BlockEntityType<ChunkLoaderBlockEntity>
-    > CHUNK_LOADER_BE = BLOCK_ENTITIES.register("chunk_loader", () ->
-        Compat.createBlockEntityType(
-            ChunkLoaderBlockEntity::new,
-            CHUNK_LOADER_BLOCK.get()
-        )
-    );
+    > CHUNK_LOADER_BE = CHUNK_LOADER.entity;
 
-    @SuppressWarnings("unchecked")
+    public static final Supplier<SpawnerAgitatorBlock> SPAWNER_AGITATOR_BLOCK =
+        SPAWNER_AGITATOR.block;
+    public static final Supplier<BlockItem> SPAWNER_AGITATOR_ITEM =
+        SPAWNER_AGITATOR.item;
     public static final Supplier<
         BlockEntityType<SpawnerAgitatorBlockEntity>
-    > SPAWNER_AGITATOR_BE = BLOCK_ENTITIES.register("spawner_agitator", () ->
-        Compat.createBlockEntityType(
-            SpawnerAgitatorBlockEntity::new,
-            SPAWNER_AGITATOR_BLOCK.get()
-        )
-    );
+    > SPAWNER_AGITATOR_BE = SPAWNER_AGITATOR.entity;
 
-    @SuppressWarnings("unchecked")
+    public static final Supplier<WardingPostBlock> WARDING_POST_BLOCK =
+        WARDING_POST.block;
+    public static final Supplier<BlockItem> WARDING_POST_ITEM =
+        WARDING_POST.item;
     public static final Supplier<
         BlockEntityType<WardingPostBlockEntity>
-    > WARDING_POST_BE = BLOCK_ENTITIES.register("warding_post", () ->
-        Compat.createBlockEntityType(
-            WardingPostBlockEntity::new,
-            WARDING_POST_BLOCK.get()
-        )
-    );
+    > WARDING_POST_BE = WARDING_POST.entity;
 
     public static final Supplier<CreativeModeTab> MINARET_TAB =
         CREATIVE_TABS.register("minaret", () ->

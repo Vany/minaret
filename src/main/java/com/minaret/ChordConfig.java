@@ -9,10 +9,6 @@ import java.util.*;
  * Persistent config for chord key sequences.
  * Stored as TOML in config/minaret-chords.toml.
  *
- * Chord targets use a prefix convention:
- *   "key:key.inventory"         → fire a KeyMapping action
- *   "cmd:{\"command\":\"...\"}" → execute as WebSocket JSON command
- *
  * Format:
  *   meta_key = "f"
  *
@@ -21,9 +17,6 @@ import java.util.*;
  *   "f>2" = "cmd:{\"command\":\"time set day\"}"
  */
 public class ChordConfig {
-
-    public static final String KEY_PREFIX = "key:";
-    public static final String CMD_PREFIX = "cmd:";
 
     private static final Path CONFIG_PATH = Path.of(
         "config",
@@ -35,7 +28,7 @@ public class ChordConfig {
     );
 
     private String metaKey = "f";
-    private final Map<String, String> chords = new LinkedHashMap<>();
+    private final Map<String, ChordTarget> chords = new LinkedHashMap<>();
 
     private static final ChordConfig INSTANCE = new ChordConfig();
 
@@ -54,7 +47,7 @@ public class ChordConfig {
         save();
     }
 
-    public Map<String, String> getChords() {
+    public Map<String, ChordTarget> getChords() {
         return Collections.unmodifiableMap(chords);
     }
 
@@ -62,13 +55,13 @@ public class ChordConfig {
         return Collections.unmodifiableSet(chords.keySet());
     }
 
-    /** Get the raw target string for a chord, or null if not found. */
-    public String getTarget(String sequence) {
+    /** Get the typed target for a chord, or null if not found. */
+    public ChordTarget getTarget(String sequence) {
         return chords.get(sequence.toLowerCase());
     }
 
     /** Add a chord. Returns true if added, false if duplicate. */
-    public boolean addChord(String sequence, String target) {
+    public boolean addChord(String sequence, ChordTarget target) {
         String normalized = sequence.toLowerCase();
         if (chords.containsKey(normalized)) return false;
         chords.put(normalized, target);
@@ -122,7 +115,7 @@ public class ChordConfig {
                 if (!inChords) {
                     if (key.equals("meta_key")) metaKey = value;
                 } else {
-                    chords.put(key, value);
+                    chords.put(key, ChordTarget.deserialize(value));
                 }
             }
 
@@ -147,7 +140,7 @@ public class ChordConfig {
                 sb
                     .append(quoteToml(entry.getKey()))
                     .append(" = ")
-                    .append(quoteToml(entry.getValue()))
+                    .append(quoteToml(entry.getValue().serialize()))
                     .append('\n');
             }
             Files.writeString(CONFIG_PATH, sb.toString());
@@ -212,7 +205,7 @@ public class ChordConfig {
                         entry.getKey() instanceof String key &&
                         entry.getValue() instanceof String value
                     ) {
-                        chords.put(key, value);
+                        chords.put(key, ChordTarget.deserialize(value));
                     }
                 }
             }
