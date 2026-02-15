@@ -21,7 +21,11 @@ public final class MessageDispatcher {
     private MessageDispatcher() {}
 
     /** Dispatch a JSON message string to the appropriate handler. */
-    public static void dispatch(String message, MinecraftServer server, Consumer<String> respond) {
+    public static void dispatch(
+        String message,
+        MinecraftServer server,
+        Consumer<String> respond
+    ) {
         try {
             LOGGER.debug("Processing message: {}", message);
             Map<String, String> json = SimpleJson.parseFlat(message);
@@ -33,7 +37,11 @@ public final class MessageDispatcher {
             } else if (json.containsKey("getEffects")) {
                 handleGetEffects(json.get("getEffects"), server, respond);
             } else {
-                respondError(respond, null, "Unknown message type. Use 'message', 'command', or 'getEffects' fields.");
+                respondError(
+                    respond,
+                    null,
+                    "Unknown message type. Use 'message', 'command', or 'getEffects' fields."
+                );
             }
         } catch (Exception e) {
             LOGGER.error("Error processing message: {}", message, e);
@@ -41,7 +49,11 @@ public final class MessageDispatcher {
         }
     }
 
-    private static void handleChat(Map<String, String> json, MinecraftServer server, Consumer<String> respond) {
+    private static void handleChat(
+        Map<String, String> json,
+        MinecraftServer server,
+        Consumer<String> respond
+    ) {
         String chatMessage = json.get("message");
         String user = json.getOrDefault("user", null);
         String chat = json.getOrDefault("chat", null);
@@ -68,79 +80,143 @@ public final class MessageDispatcher {
         respondSuccess(respond, "message");
     }
 
-    private static void handleCommand(String command, MinecraftServer server, Consumer<String> respond) {
+    private static void handleCommand(
+        String command,
+        MinecraftServer server,
+        Consumer<String> respond
+    ) {
         server.execute(() -> {
             try {
-                CommandSourceStack source = server.createCommandSourceStack().withSuppressedOutput();
-                int result = server.getCommands().getDispatcher().execute(command, source);
+                CommandSourceStack source = server
+                    .createCommandSourceStack()
+                    .withSuppressedOutput();
+                int result = server
+                    .getCommands()
+                    .getDispatcher()
+                    .execute(command, source);
 
                 if (result > 0) {
-                    Map<String, Object> response = new LinkedHashMap<>();
-                    response.put("status", "success");
-                    response.put("type", "command");
-                    response.put("command", command);
-                    response.put("result", String.valueOf(result));
-                    respond.accept(SimpleJson.generate(response));
-                    LOGGER.info("Command executed: {} (result: {})", command, result);
+                    respondSuccess(
+                        respond,
+                        "command",
+                        "command",
+                        command,
+                        "result",
+                        String.valueOf(result)
+                    );
+                    LOGGER.info(
+                        "Command executed: {} (result: {})",
+                        command,
+                        result
+                    );
                 } else {
-                    respondError(respond, "command",
+                    respondError(
+                        respond,
+                        "command",
                         "Command returned 0 - may lack permissions, be invalid, or had no effect",
-                        "command", command, "result", String.valueOf(result));
-                    LOGGER.warn("Command failed: {} (result: {})", command, result);
+                        "command",
+                        command,
+                        "result",
+                        String.valueOf(result)
+                    );
+                    LOGGER.warn(
+                        "Command failed: {} (result: {})",
+                        command,
+                        result
+                    );
                 }
             } catch (Exception e) {
-                respondError(respond, "command",
-                    e.getMessage() != null ? e.getMessage() : "Command execution failed",
-                    "command", command);
+                respondError(
+                    respond,
+                    "command",
+                    e.getMessage() != null
+                        ? e.getMessage()
+                        : "Command execution failed",
+                    "command",
+                    command
+                );
                 LOGGER.error("Command error: {}", command, e);
             }
         });
     }
 
     @SuppressWarnings("unchecked")
-    private static void handleGetEffects(String playerName, MinecraftServer server, Consumer<String> respond) {
+    private static void handleGetEffects(
+        String playerName,
+        MinecraftServer server,
+        Consumer<String> respond
+    ) {
         server.execute(() -> {
             try {
-                ServerPlayer player = server.getPlayerList().getPlayerByName(playerName);
+                ServerPlayer player = server
+                    .getPlayerList()
+                    .getPlayerByName(playerName);
                 if (player == null) {
-                    respondError(respond, "getEffects", "Player not found: " + playerName);
+                    respondError(
+                        respond,
+                        "getEffects",
+                        "Player not found: " + playerName
+                    );
                     return;
                 }
 
-                Collection<MobEffectInstance> effects = player.getActiveEffects();
+                Collection<MobEffectInstance> effects =
+                    player.getActiveEffects();
                 List<Object> effectList = new ArrayList<>();
                 for (MobEffectInstance effect : effects) {
                     Map<String, Object> e = new LinkedHashMap<>();
                     e.put("effect", effect.getEffect().getRegisteredName());
-                    e.put("duration", effect.isInfiniteDuration() ? -1 : effect.getDuration());
+                    e.put(
+                        "duration",
+                        effect.isInfiniteDuration() ? -1 : effect.getDuration()
+                    );
                     e.put("amplifier", effect.getAmplifier());
                     effectList.add(e);
                 }
 
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("status", "success");
-                response.put("type", "getEffects");
-                response.put("player", playerName);
-                response.put("effects", effectList);
-                respond.accept(SimpleJson.generate(response));
+                respondSuccess(
+                    respond,
+                    "getEffects",
+                    "player",
+                    playerName,
+                    "effects",
+                    effectList
+                );
                 LOGGER.info("getEffects for player: {}", playerName);
             } catch (Exception e) {
-                respondError(respond, "getEffects",
-                    e.getMessage() != null ? e.getMessage() : "Failed to get effects");
+                respondError(
+                    respond,
+                    "getEffects",
+                    e.getMessage() != null
+                        ? e.getMessage()
+                        : "Failed to get effects"
+                );
             }
         });
     }
 
     // ── Response helpers ────────────────────────────────────────────────
 
-    private static void respondSuccess(Consumer<String> respond, String type) {
+    private static void respondSuccess(
+        Consumer<String> respond,
+        String type,
+        Object... extra
+    ) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("status", "success");
         r.put("type", type);
+        for (int i = 0; i + 1 < extra.length; i += 2) {
+            r.put((String) extra[i], extra[i + 1]);
+        }
         respond.accept(SimpleJson.generate(r));
     }
 
-    private static void respondError(Consumer<String> respond, String type, String error, String... extra) {
+    private static void respondError(
+        Consumer<String> respond,
+        String type,
+        String error,
+        String... extra
+    ) {
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("status", "error");
         r.put("error", error);

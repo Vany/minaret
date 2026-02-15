@@ -159,16 +159,7 @@ public class ChordConfig {
     // ── TOML helpers ────────────────────────────────────────────────────
 
     private static String quoteToml(String value) {
-        return (
-            "\"" +
-            value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t") +
-            "\""
-        );
+        return "\"" + SimpleJson.escapeString(value) + "\"";
     }
 
     private static String unquoteToml(String value) {
