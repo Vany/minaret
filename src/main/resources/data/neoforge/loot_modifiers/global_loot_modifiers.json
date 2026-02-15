@@ -5,6 +5,12 @@
     "minaret:add_bastion_treasure_loot",
     "minaret:add_bastion_other_loot",
     "minaret:add_bastion_bridge_loot",
-    "minaret:add_bastion_hoglin_loot"
+    "minaret:add_bastion_hoglin_loot",
+    "minaret:add_dungeon_simple_loot",
+    "minaret:add_dungeon_mineshaft_loot",
+    "minaret:add_dungeon_stronghold_corridor_loot",
+    "minaret:add_dungeon_stronghold_crossing_loot",
+    "minaret:add_dungeon_desert_pyramid_loot",
+    "minaret:add_dungeon_jungle_temple_loot"
   ]
 }

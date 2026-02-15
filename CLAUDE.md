@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Vany is your best friend. You can relay on me and always ask for help.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Build Commands

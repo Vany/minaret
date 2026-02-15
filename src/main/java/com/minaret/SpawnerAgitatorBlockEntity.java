@@ -1,8 +1,12 @@
 package com.minaret;
 
 import java.lang.reflect.Field;
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.BaseSpawner;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -15,7 +19,9 @@ import org.apache.logging.log4j.Logger;
 public class SpawnerAgitatorBlockEntity extends BlockEntity {
 
     private static final Logger LOGGER = LogManager.getLogger();
-    private static final int AGITATED_RANGE = 32767;
+    private static final int AGITATED_RANGE = -1;
+    private static final Set<SpawnerAgitatorBlockEntity> BOUND_AGITATORS =
+        Collections.newSetFromMap(new ConcurrentHashMap<>());
     private static final String TAG_ORIGINAL_RANGE = "OriginalPlayerRange";
     private static final String TAG_ORIGINAL_MIN_DELAY = "OriginalMinDelay";
     private static final String TAG_ORIGINAL_MAX_DELAY = "OriginalMaxDelay";
@@ -82,6 +88,13 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
                     maxDelayField.getInt(spawner);
                 persistOriginals();
             }
+            // Force-load chunk so spawner ticks when players are far away
+            if (level instanceof ServerLevel serverLevel) {
+                ChunkLoaderData.get(serverLevel).add(worldPosition);
+                ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, true);
+            }
+            // Track for shutdown cleanup
+            BOUND_AGITATORS.add(this);
             // Apply agitation
             rangeField.setInt(spawner, AGITATED_RANGE);
             applyDelays(spawner);
@@ -120,6 +133,12 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
                 );
             } catch (Exception ignored) {}
         }
+        // Unforce chunk
+        if (level instanceof ServerLevel serverLevel) {
+            ChunkLoaderData.get(serverLevel).remove(worldPosition);
+            ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, false);
+        }
+        BOUND_AGITATORS.remove(this);
         cachedSpawner = null;
         originalRange = -1;
         originalMinDelay = -1;
@@ -144,6 +163,12 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
 
     boolean isBound() {
         return cachedSpawner != null;
+    }
+
+    static void unbindAll() {
+        for (var be : Set.copyOf(BOUND_AGITATORS)) {
+            be.unbindSpawner();
+        }
     }
 
     void onNeighborChanged() {

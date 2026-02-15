@@ -109,9 +109,9 @@ File: `config/minaret-server.toml` (NeoForge `ModConfigSpec`, server type)
 
 ## 4. Chord Keys (client-side)
 
-Dynamic chord key system — emacs-style key sequences that fire virtual `KeyMapping`s.
-Users define arbitrary chord sequences via commands; each gets a pool slot that appears
-in Controls for binding to any mod's keybindings.
+Emacs-style key sequences that fire actions. Two target types:
+- **Key targets** (`key:<name>`) — trigger a `KeyMapping` by name (any mod's keybinding)
+- **Command targets** (`cmd:<json>`) — dispatch JSON as a WebSocket command
 
 ### Configuration
 File: `config/minaret-chords.json` (not ModConfigSpec — needs nested structure)
@@ -119,59 +119,65 @@ File: `config/minaret-chords.json` (not ModConfigSpec — needs nested structure
 {
   "metaKey": "f",
   "chords": {
-    "f>1": 0,
-    "f>f>1": 1,
-    "f>2": 2
+    "f>1": "key:sophisticatedbackpacks.openbackpack",
+    "f>2": "cmd:{\"command\":\"time set day\"}"
   }
 }
 ```
 - `metaKey`: the initiating key for all chord sequences (default: `f`)
-- `chords`: map of sequence string → pool slot index
+- `chords`: map of sequence string → prefixed target string
 
 ### Commands
-- `/minaret addkey <sequence>` — add a chord (e.g. `f>f>1`). First key must be meta key. Assigns next free pool slot.
+- `/minaret addkey <sequence> <action>` — bind chord to a KeyMapping name (tab-completes action names)
+- `/minaret addcommand <sequence> <json>` — bind chord to a WebSocket JSON command
 - `/minaret delkey <sequence>` — remove a chord
-- `/minaret listkeys` — list all configured chords with slot assignments
+- `/minaret listkeys` — list all configured chords with targets
+- `/minaret listactions [filter]` — list available KeyMapping names (optional substring filter)
 
-### Virtual Key Pool
-- 200 pre-allocated virtual `KeyMapping`s (keycodes 1000–1199)
-- Named "Chord #0" through "Chord #199" in Controls screen under "Minaret Chords"
-- Chord sequences from config are assigned to pool slots
-- Users bind other mods' actions to these slots (e.g. bind Iron's quick_cast_1 to "Chord #0")
-- `KeyMapping.click(virtualKey)` triggers any action bound to that keycode
+### Key Consumption
+`InputEvent.Key` is NOT cancelable in NeoForge. `KeyMapping.click()` fires BEFORE the event.
+Solution: reflection-based `consumeKey()` resets `clickCount` to 0 and `setDown(false)` on all
+`KeyMapping`s bound to the consumed key. This prevents the meta key (and subsequent keys) from
+triggering game actions while a chord is in progress.
+
+### Chord Firing
+- `key:` targets: find the `KeyMapping` by name, read its bound `InputConstants.Key` via reflection,
+  call `KeyMapping.click(boundKey)` to trigger whatever action is bound to that key
+- `cmd:` targets: dispatch the JSON string through `MessageDispatcher.dispatch()` using
+  `MinaretMod.getServer()`, same as if received from WebSocket
+- Legacy: bare target strings (no prefix) treated as key targets for backwards compat
 
 ### State Machine (trie-based)
 A trie is built from all configured chord sequences. On key press, walk one step:
 ```
-Example trie for f>1, f>f>1, f>2:
+Example trie for f>1, f>2:
   ROOT
    └─ f (meta) → overlay "f > _"
-       ├─ 1 → fire slot 0
-       ├─ 2 → fire slot 2
-       └─ f → overlay "f > f > _"
-           └─ 1 → fire slot 1
+       ├─ 1 → fire "key:sophisticatedbackpacks.openbackpack"
+       └─ 2 → fire "cmd:{\"command\":\"time set day\"}"
 ```
 - IDLE → meta key → enter trie, show overlay
 - At trie node → matching child → advance (or fire if leaf)
 - At trie node → no matching child → cancel, reset to IDLE
-- 500ms timeout → reset to IDLE (fire if timed out on a leaf node)
+- 1500ms timeout → reset to IDLE (fire if timed out on a leaf node)
+- Chords ignored when `mc.screen != null` (chat, menus, etc.)
 
 ### Key Names
 Letters `a-z`, digits `0-9`, `f1-f12`, `space`, `tab`, `minus`, `equals`,
 `lbracket`, `rbracket`, `semicolon`, `comma`, `period`, `slash`.
 
-### Implementation
-- `KeyMapping` construction uses reflection for cross-version compat (1.21.1: String category, 1.21.11: Category record with Identifier)
-- Category registered via `Category.register(Identifier("minaret", "chords"))` on 1.21.11+
+### Meta Key
+Registered as a configurable `KeyMapping` ("Chord Meta Key") in Controls under "Minaret Chords".
+Cross-version `KeyMapping` construction via reflection (1.21.1: String category, 1.21.11: Category record).
 
 ### Files
-- `com.minaret.client.ChordKeyHandler` — trie state machine, pool allocation, key name mapping
+- `com.minaret.client.ChordKeyHandler` — trie state machine, key consumption, chord firing
 - `com.minaret.ChordConfig` — JSON persistence for chord definitions
 - Initialized from `MinaretMod` constructor, guarded by reflective dist check
 
 ## 5. Block Subsystem
 
-Two custom blocks with block entities, plus a persistence layer for chunk loaders.
+Three custom blocks with block entities, plus a persistence layer for chunk loaders.
 
 ### Spawner Agitator (`spawner_agitator`)
 
@@ -226,6 +232,35 @@ Plain text file persistence (`minaret_chunk_loaders.txt` in world save directory
 - Singleton per `ServerLevel`, loaded lazily on first access
 - `forceAll()` / `unforceAll()` for batch operations on server lifecycle
 
+### Warding Post (`warding_post`)
+
+A post block that repels hostile mobs. Horizontal radius scales with column height (stacking).
+
+**Radius formula:** `radius = 4 * columnHeight` blocks (1 post = 4, 2 stacked = 8, 3 = 12, etc.). Vertical range is always ±2 blocks.
+
+**Behavior:**
+- Only the topmost post in a column ticks (others skip via `isTopOfColumn` flag)
+- Ticks every 4 server ticks (5 times per second)
+- Scans for `Monster` entities in a dynamic AABB centered on the topmost post
+- Pushes each mob ~0.5 blocks outward horizontally with a slight upward boost (0.1)
+- Mobs exactly at center are pushed in an arbitrary direction (+X)
+- Custom collision shape: narrow 4×16×4 post (visual only — full block support shape for building on top)
+
+**Column stacking (mirrors spawner agitator pattern):**
+
+| Event | Action |
+|-------|--------|
+| `onPlace` (Block) | `notifyColumn()` — walk down to column base, walk up recalculating each post |
+| `playerWillDestroy` (Block) | `notifyColumnExcluding(removed)` — recalc column skipping the removed post |
+| `onLoad` (BlockEntity) | `recalcColumn()` — recompute on chunk load |
+
+Each post caches `cachedColumnHeight` (count of posts at or below it) and `isTopOfColumn` (no warding post directly above).
+
+**Architecture:**
+- `WardingPostBlock` extends `BaseEntityBlock` with custom `VoxelShape`, `onPlace`/`playerWillDestroy` for column notification
+- `WardingPostBlockEntity` has server ticker (topmost only), column height caching, no NBT persistence needed
+- Found as dungeon loot (jungle temples, desert pyramids, strongholds, mineshafts, simple dungeons)
+
 ### Compat (reflection utilities)
 
 Caches all reflected `Method` and `Class` objects in `static final` fields, resolved once at class load:
@@ -253,13 +288,14 @@ API compatibility: `/minaret exec` permission check uses reflection to handle `h
 4. **CachedThreadPool** — unbounded thread pool; acceptable given expected low connection count (<10)
 5. **No continuation frames** — single-frame messages only; sufficient for JSON payloads under 64KB
 6. **Reflection for version compat** — `hasPermission`, `FMLEnvironment.dist`/`getDist()`, `KeyMapping` constructor all differ between versions; reflection handles all three
-7. **Virtual keycode pool for chords** — 200 pre-allocated keycodes 1000–1199 (outside GLFW range max 348). Chord sequences assigned to pool slots dynamically via commands. Pool size fixed at load time (KeyMappings can only register during mod init).
-8. **Separate chord config file** — `config/minaret-chords.json` instead of ModConfigSpec, because chord data is nested (map of sequence→slot) and client-side only
-9. **No world access in `setRemoved()`** — causes infinite loops during chunk unload. All cleanup moved to `playerWillDestroy()` on the Block class
-10. **`AGITATED_RANGE = 32767` not `-1`** — `-1` makes spawner always active (bypasses player range check), which prevents clean shutdown. `32767` is large enough to be effectively infinite but stops naturally when players disconnect
-11. **Plain text file for ChunkLoaderData** — `SavedData`/`SavedDataType` API differs between 1.21.1 and 1.21.11; simple text file avoids the incompatibility
-12. **Atomic file save** — write to `.tmp` then `Files.move(ATOMIC_MOVE)` prevents corruption on crash mid-write
-13. **Event-driven spawner binding** — spawner discovery on place/load events, not per-tick polling. Ticker only does the delay acceleration (which genuinely needs per-tick work)
+7. **Direct KeyMapping firing for chords** — chords map directly to KeyMapping names (e.g. `key:sophisticatedbackpacks.openbackpack`) or WebSocket commands (`cmd:{...}`). No phantom/virtual keycodes needed. `KeyMapping.click(boundKey)` fires the target action directly.
+8. **Separate chord config file** — `config/minaret-chords.json` instead of ModConfigSpec, because chord data is nested (map of sequence→target) and client-side only
+9. **Reflection-based key consumption** — `InputEvent.Key` is not cancelable in NeoForge. Keys are consumed by resetting `clickCount` to 0 and `setDown(false)` on matching KeyMappings via reflection, since `KeyMapping.click()` fires before the event
+10. **No world access in `setRemoved()`** — causes infinite loops during chunk unload. All cleanup moved to `playerWillDestroy()` on the Block class
+11. **`AGITATED_RANGE = 32767` not `-1`** — `-1` makes spawner always active (bypasses player range check), which prevents clean shutdown. `32767` is large enough to be effectively infinite but stops naturally when players disconnect
+12. **Plain text file for ChunkLoaderData** — `SavedData`/`SavedDataType` API differs between 1.21.1 and 1.21.11; simple text file avoids the incompatibility
+13. **Atomic file save** — write to `.tmp` then `Files.move(ATOMIC_MOVE)` prevents corruption on crash mid-write
+14. **Event-driven spawner binding** — spawner discovery on place/load events, not per-tick polling. Ticker only does the delay acceleration (which genuinely needs per-tick work)
 
 ## 8. Not Yet Implemented (from REQUIREMENTS.md)
 

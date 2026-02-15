@@ -85,6 +85,19 @@ public class MinaretMod {
                 )
             )
         );
+    public static final Supplier<WardingPostBlock> WARDING_POST_BLOCK =
+        BLOCKS.register("warding_post", () ->
+            new WardingPostBlock(
+                Compat.setBlockId(
+                    BlockBehaviour.Properties.of()
+                        .mapColor(MapColor.STONE)
+                        .sound(SoundType.STONE)
+                        .strength(2.0f)
+                        .noOcclusion(),
+                    "warding_post"
+                )
+            )
+        );
 
     public static final Supplier<BlockItem> CHUNK_LOADER_ITEM = ITEMS.register(
         "chunk_loader",
@@ -101,6 +114,14 @@ public class MinaretMod {
                 Compat.setItemId(new Item.Properties(), "spawner_agitator")
             )
         );
+    public static final Supplier<BlockItem> WARDING_POST_ITEM = ITEMS.register(
+        "warding_post",
+        () ->
+            new BlockItem(
+                WARDING_POST_BLOCK.get(),
+                Compat.setItemId(new Item.Properties(), "warding_post")
+            )
+    );
 
     @SuppressWarnings("unchecked")
     public static final Supplier<
@@ -122,6 +143,16 @@ public class MinaretMod {
         )
     );
 
+    @SuppressWarnings("unchecked")
+    public static final Supplier<
+        BlockEntityType<WardingPostBlockEntity>
+    > WARDING_POST_BE = BLOCK_ENTITIES.register("warding_post", () ->
+        Compat.createBlockEntityType(
+            WardingPostBlockEntity::new,
+            WARDING_POST_BLOCK.get()
+        )
+    );
+
     public static final Supplier<CreativeModeTab> MINARET_TAB =
         CREATIVE_TABS.register("minaret", () ->
             CreativeModeTab.builder()
@@ -130,11 +161,17 @@ public class MinaretMod {
                 .displayItems((params, output) -> {
                     output.accept(CHUNK_LOADER_ITEM.get());
                     output.accept(SPAWNER_AGITATOR_ITEM.get());
+                    output.accept(WARDING_POST_ITEM.get());
                 })
                 .build()
         );
 
     private static WebSocketServer webSocketServer;
+    private static net.minecraft.server.MinecraftServer currentServer;
+
+    public static net.minecraft.server.MinecraftServer getServer() {
+        return currentServer;
+    }
 
     public MinaretMod(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(
@@ -167,13 +204,18 @@ public class MinaretMod {
 
         if (Compat.isClient()) {
             com.minaret.client.ChordKeyHandler.init(modEventBus);
+            modEventBus.addListener(
+                (net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent e) ->
+                    com.minaret.client.ChordKeyHandler.registerKeys(e)
+            );
         }
     }
 
     private void onServerStarting(
         net.neoforged.neoforge.event.server.ServerStartingEvent event
     ) {
-        var server = event.getServer();
+        currentServer = event.getServer();
+        var server = currentServer;
         for (var level : server.getAllLevels()) {
             ChunkLoaderData.get(level).forceAll(level);
         }
@@ -200,7 +242,10 @@ public class MinaretMod {
     private void onServerStopping(
         net.neoforged.neoforge.event.server.ServerStoppingEvent event
     ) {
+        // Restore all agitated spawners before save loop to prevent shutdown hang
+        SpawnerAgitatorBlockEntity.unbindAll();
         ChunkLoaderData.reset();
+        currentServer = null;
         if (webSocketServer != null) {
             try {
                 webSocketServer.stop();

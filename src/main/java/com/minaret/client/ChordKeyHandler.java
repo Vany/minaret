@@ -1,10 +1,16 @@
 package com.minaret.client;
 
 import com.minaret.ChordConfig;
+import com.minaret.Compat;
+import com.minaret.MessageDispatcher;
 import com.minaret.MinaretMod;
 import com.mojang.blaze3d.platform.InputConstants;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.IEventBus;
@@ -14,28 +20,147 @@ import net.neoforged.neoforge.common.NeoForge;
 
 /**
  * Trie-based chord key state machine. Detects emacs-style key sequences
- * (e.g. f>a>1) and fires them. The meta key (default F) initiates all chords.
- * Client-side only.
+ * (e.g. f>1) and fires actions. Client-side only.
+ *
+ * Two chord target types:
+ *   key:<name>  — fire a KeyMapping by name (e.g. key:key.inventory)
+ *   cmd:<json>  — dispatch JSON as a WebSocket command (e.g. cmd:{"command":"time set day"})
+ *
+ * Key consumption: InputEvent.Key fires AFTER KeyMapping.click() has already
+ * incremented clickCount. We reset clickCount via reflection to prevent
+ * consumed keys from triggering game actions.
  */
 public class ChordKeyHandler {
 
-    private static final long TIMEOUT_MS = 500;
+    private static final long TIMEOUT_MS = 1500;
+
+    // ── Reflection for key consumption ──────────────────────────────────
+
+    private static Field clickCountField;
+    private static Field keyField;
+
+    static {
+        try {
+            clickCountField = KeyMapping.class.getDeclaredField("clickCount");
+            clickCountField.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            for (Field f : KeyMapping.class.getDeclaredFields()) {
+                if (f.getType() == int.class) {
+                    f.setAccessible(true);
+                    clickCountField = f;
+                    break;
+                }
+            }
+        }
+        try {
+            keyField = KeyMapping.class.getDeclaredField("key");
+            keyField.setAccessible(true);
+        } catch (NoSuchFieldException ignored) {}
+    }
+
+    /** Reset clickCount and isDown on all KeyMappings bound to this key. */
+    private static void consumeKey(int keyCode) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options == null || clickCountField == null) return;
+        InputConstants.Key inputKey = InputConstants.Type.KEYSYM.getOrCreate(
+            keyCode
+        );
+        for (KeyMapping km : mc.options.keyMappings) {
+            if (km.isActiveAndMatches(inputKey)) {
+                try {
+                    clickCountField.setInt(km, 0);
+                } catch (IllegalAccessException ignored) {}
+                km.setDown(false);
+            }
+        }
+    }
+
+    // ── Meta key (configurable KeyMapping in Controls) ───────────────────
+
+    private static Object metaKeyMapping;
+
+    /** Called from RegisterKeyMappingsEvent handler. */
+    public static void registerKeys(Object event) {
+        int metaCode = nameToKeyCode(ChordConfig.get().getMetaKey());
+        if (metaCode < 0) metaCode = InputConstants.KEY_F;
+        metaKeyMapping = Compat.createKeyMapping(
+            "Chord Meta Key",
+            metaCode,
+            "chords"
+        );
+        Compat.registerCategory(event);
+        Compat.registerKeyMapping(event, metaKeyMapping);
+    }
+
+    // ── Chord firing ────────────────────────────────────────────────────
+
+    private static KeyMapping findKeyMapping(String name) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options == null) return null;
+        for (KeyMapping km : mc.options.keyMappings) {
+            if (km.getName().equals(name)) return km;
+        }
+        return null;
+    }
+
+    private static void fireKeyTarget(String keyMappingName) {
+        KeyMapping target = findKeyMapping(keyMappingName);
+        if (target == null) {
+            MinaretMod.LOGGER.warn(
+                "Target KeyMapping '{}' not found",
+                keyMappingName
+            );
+            return;
+        }
+        try {
+            InputConstants.Key boundKey = (InputConstants.Key) keyField.get(
+                target
+            );
+            KeyMapping.click(boundKey);
+        } catch (Exception e) {
+            MinaretMod.LOGGER.error(
+                "Failed to click target '{}'",
+                keyMappingName,
+                e
+            );
+        }
+    }
+
+    private static void fireCmdTarget(String json) {
+        var server = MinaretMod.getServer();
+        if (server == null) {
+            MinaretMod.LOGGER.warn("Cannot execute chord command — no server");
+            return;
+        }
+        MessageDispatcher.dispatch(json, server, response ->
+            MinaretMod.LOGGER.debug("Chord command response: {}", response)
+        );
+    }
+
+    /** Get all registered KeyMapping names. */
+    public static List<String> getAllKeyMappingNames() {
+        List<String> names = new ArrayList<>();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options == null) return names;
+        for (KeyMapping km : mc.options.keyMappings) {
+            names.add(km.getName());
+        }
+        return names;
+    }
 
     // ── Trie ────────────────────────────────────────────────────────────
 
     static class TrieNode {
 
         final Map<Integer, TrieNode> children = new HashMap<>();
-        String sequence; // non-null at leaf nodes — the chord sequence string
+        String sequence;
     }
 
     private static TrieNode trieRoot = new TrieNode();
 
-    /** Rebuild trie from current ChordConfig. */
     public static void rebuildTrie() {
         TrieNode root = new TrieNode();
-        ChordConfig config = ChordConfig.get();
-        for (String sequence : config.getChords()) {
+        for (String sequence : ChordConfig.get().getChordSequences()) {
             String[] parts = sequence.split(">");
             TrieNode node = root;
             boolean valid = true;
@@ -57,10 +182,6 @@ public class ChordKeyHandler {
             if (valid) node.sequence = sequence;
         }
         trieRoot = root;
-        MinaretMod.LOGGER.info(
-            "Chord trie rebuilt: {} sequences",
-            config.getChords().size()
-        );
     }
 
     // ── State machine ───────────────────────────────────────────────────
@@ -86,7 +207,17 @@ public class ChordKeyHandler {
     }
 
     private static void fireChord(String sequence) {
-        MinaretMod.LOGGER.debug("Chord fired: {}", sequence);
+        String target = ChordConfig.get().getTarget(sequence);
+        if (target == null) {
+            MinaretMod.LOGGER.warn("Chord '{}' has no target", sequence);
+        } else if (target.startsWith(ChordConfig.KEY_PREFIX)) {
+            fireKeyTarget(target.substring(ChordConfig.KEY_PREFIX.length()));
+        } else if (target.startsWith(ChordConfig.CMD_PREFIX)) {
+            fireCmdTarget(target.substring(ChordConfig.CMD_PREFIX.length()));
+        } else {
+            // Legacy: bare KeyMapping name without prefix
+            fireKeyTarget(target);
+        }
         resetState();
     }
 
@@ -99,6 +230,9 @@ public class ChordKeyHandler {
     }
 
     private static int getMetaKeyCode() {
+        if (metaKeyMapping instanceof KeyMapping km) return km
+            .getKey()
+            .getValue();
         return nameToKeyCode(ChordConfig.get().getMetaKey());
     }
 
@@ -106,14 +240,20 @@ public class ChordKeyHandler {
 
     private static void onKeyInput(InputEvent.Key event) {
         if (event.getAction() != InputConstants.PRESS) return;
-        int key = event.getKey();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen != null) return;
 
+        int key = event.getKey();
         if (isTimedOut()) resetState();
 
         if (!isActive()) {
-            if (key == getMetaKeyCode() && !trieRoot.children.isEmpty()) {
+            int metaKey = getMetaKeyCode();
+            if (
+                metaKey >= 0 && key == metaKey && !trieRoot.children.isEmpty()
+            ) {
                 TrieNode next = trieRoot.children.get(key);
                 if (next != null) {
+                    consumeKey(key);
                     if (next.sequence != null && next.children.isEmpty()) {
                         fireChord(next.sequence);
                         return;
@@ -128,6 +268,7 @@ public class ChordKeyHandler {
             return;
         }
 
+        consumeKey(key);
         TrieNode next = currentNode.children.get(key);
         if (next == null) {
             if (currentNode.sequence != null) {
@@ -138,13 +279,12 @@ public class ChordKeyHandler {
             }
             return;
         }
-
         if (next.sequence != null && next.children.isEmpty()) {
             fireChord(next.sequence);
         } else {
             currentNode = next;
             stateTimestamp = System.currentTimeMillis();
-            chordDisplay.setLength(chordDisplay.length() - 1); // remove '_'
+            chordDisplay.setLength(chordDisplay.length() - 1);
             chordDisplay.append(keyCodeToName(key)).append(" > _");
             showOverlay(chordDisplay.toString());
         }
@@ -153,11 +293,8 @@ public class ChordKeyHandler {
     private static void onClientTick(ClientTickEvent.Post event) {
         if (!isActive()) return;
         if (isTimedOut()) {
-            if (currentNode.sequence != null) {
-                fireChord(currentNode.sequence);
-            } else {
-                resetState();
-            }
+            if (currentNode.sequence != null) fireChord(currentNode.sequence);
+            else resetState();
         }
     }
 
@@ -169,15 +306,12 @@ public class ChordKeyHandler {
     static {
         for (int i = 0; i < 26; i++) {
             String name = String.valueOf((char) ('a' + i));
-            int code = InputConstants.KEY_A + i;
-            NAME_TO_KEY.put(name, code);
-            KEY_TO_NAME.put(code, name);
+            NAME_TO_KEY.put(name, InputConstants.KEY_A + i);
+            KEY_TO_NAME.put(InputConstants.KEY_A + i, name);
         }
         for (int i = 0; i <= 9; i++) {
-            String name = String.valueOf(i);
-            int code = InputConstants.KEY_0 + i;
-            NAME_TO_KEY.put(name, code);
-            KEY_TO_NAME.put(code, name);
+            NAME_TO_KEY.put(String.valueOf(i), InputConstants.KEY_0 + i);
+            KEY_TO_NAME.put(InputConstants.KEY_0 + i, String.valueOf(i));
         }
         putKey("space", InputConstants.KEY_SPACE);
         putKey("tab", InputConstants.KEY_TAB);
@@ -214,7 +348,6 @@ public class ChordKeyHandler {
         return name != null ? name : "?";
     }
 
-    /** Validate a chord sequence string. Returns null if valid, error message otherwise. */
     public static String validateSequence(String sequence) {
         if (sequence == null || sequence.isEmpty()) return "Empty sequence";
         String[] parts = sequence.toLowerCase().split(">");
@@ -238,12 +371,14 @@ public class ChordKeyHandler {
 
     // ── Initialization ──────────────────────────────────────────────────
 
-    /** Register on game bus. No KeyMappings exposed to Minecraft controls. */
     public static void init(IEventBus modEventBus) {
         ChordConfig.get().load();
         rebuildTrie();
         NeoForge.EVENT_BUS.addListener(ChordKeyHandler::onKeyInput);
         NeoForge.EVENT_BUS.addListener(ChordKeyHandler::onClientTick);
-        MinaretMod.LOGGER.info("Chord key handler initialized");
+        MinaretMod.LOGGER.debug(
+            "Chord key handler initialized ({} chords)",
+            ChordConfig.get().getChordSequences().size()
+        );
     }
 }

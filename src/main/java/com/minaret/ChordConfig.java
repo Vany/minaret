@@ -8,9 +8,17 @@ import java.util.*;
 /**
  * Persistent config for chord key sequences.
  * Stored as JSON in config/minaret-chords.json.
- * Format: {"metaKey":"f","chords":["f>1","f>a>b"]}
+ *
+ * Chord targets use a prefix convention:
+ *   "key:key.inventory"         → fire a KeyMapping action
+ *   "cmd:{\"command\":\"...\"}" → execute as WebSocket JSON command
+ *
+ * Format: {"metaKey":"f","chords":{"f>1":"key:key.inventory","f>2":"cmd:{\"command\":\"time set day\"}"}}
  */
 public class ChordConfig {
+
+    public static final String KEY_PREFIX = "key:";
+    public static final String CMD_PREFIX = "cmd:";
 
     private static final Path CONFIG_PATH = Path.of(
         "config",
@@ -18,7 +26,7 @@ public class ChordConfig {
     );
 
     private String metaKey = "f";
-    private final Set<String> chords = new LinkedHashSet<>();
+    private final Map<String, String> chords = new LinkedHashMap<>();
 
     private static final ChordConfig INSTANCE = new ChordConfig();
 
@@ -37,14 +45,24 @@ public class ChordConfig {
         save();
     }
 
-    public Set<String> getChords() {
-        return Collections.unmodifiableSet(chords);
+    public Map<String, String> getChords() {
+        return Collections.unmodifiableMap(chords);
     }
 
-    /** Add a chord sequence. Returns true if added, false if duplicate. */
-    public boolean addChord(String sequence) {
+    public Set<String> getChordSequences() {
+        return Collections.unmodifiableSet(chords.keySet());
+    }
+
+    /** Get the raw target string for a chord, or null if not found. */
+    public String getTarget(String sequence) {
+        return chords.get(sequence.toLowerCase());
+    }
+
+    /** Add a chord. Returns true if added, false if duplicate. */
+    public boolean addChord(String sequence, String target) {
         String normalized = sequence.toLowerCase();
-        if (!chords.add(normalized)) return false;
+        if (chords.containsKey(normalized)) return false;
+        chords.put(normalized, target);
         save();
         return true;
     }
@@ -52,7 +70,7 @@ public class ChordConfig {
     /** Remove a chord sequence. Returns true if it existed. */
     public boolean removeChord(String sequence) {
         String normalized = sequence.toLowerCase();
-        if (!chords.remove(normalized)) return false;
+        if (chords.remove(normalized) == null) return false;
         save();
         return true;
     }
@@ -73,12 +91,19 @@ public class ChordConfig {
 
             chords.clear();
             Object ch = root.get("chords");
-            if (ch instanceof List<?> list) {
-                for (Object item : list) {
-                    if (item instanceof String s) chords.add(s);
+
+            if (ch instanceof Map<?, ?> map) {
+                for (var entry : map.entrySet()) {
+                    if (
+                        entry.getKey() instanceof String key &&
+                        entry.getValue() instanceof String value
+                    ) {
+                        chords.put(key, value);
+                    }
                 }
             }
-            MinaretMod.LOGGER.info(
+
+            MinaretMod.LOGGER.debug(
                 "Loaded {} chord keys (meta: {})",
                 chords.size(),
                 metaKey
@@ -93,7 +118,8 @@ public class ChordConfig {
             Files.createDirectories(CONFIG_PATH.getParent());
             Map<String, Object> root = new LinkedHashMap<>();
             root.put("metaKey", metaKey);
-            root.put("chords", new ArrayList<>(chords));
+            Map<String, Object> chordsMap = new LinkedHashMap<>(chords);
+            root.put("chords", chordsMap);
             Files.writeString(CONFIG_PATH, SimpleJson.generate(root));
         } catch (IOException e) {
             MinaretMod.LOGGER.error("Failed to save chord config", e);

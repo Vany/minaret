@@ -6,5 +6,7 @@
   "block.minaret.spawner_agitator": "Spawner Agitator",
   "item.minaret.chunk_loader": "Chunk Loader",
   "item.minaret.spawner_agitator": "Spawner Agitator",
+  "block.minaret.warding_post": "Warding Post",
+  "item.minaret.warding_post": "Warding Post",
   "itemGroup.minaret": "Minaret"
 }

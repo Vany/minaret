@@ -253,4 +253,113 @@ public final class Compat {
             "No matching ResourceKey.create method found"
         );
     }
+
+    // ── KeyMapping reflection (client-side) ─────────────────────────────
+
+    /**
+     * Create a KeyMapping cross-version.
+     * 1.21.1: KeyMapping(String, int, String) — String category
+     * 1.21.11: KeyMapping(String, int, Category) — Category record with Identifier
+     */
+    public static Object createKeyMapping(
+        String name,
+        int keyCode,
+        String categoryId
+    ) {
+        try {
+            Class<?> km = Class.forName("net.minecraft.client.KeyMapping");
+
+            // Try 1.21.11: KeyMapping(String, int, KeyMapping.Category)
+            for (Class<?> inner : km.getDeclaredClasses()) {
+                if (inner.getSimpleName().equals("Category")) {
+                    // Create Category via Category.register(Identifier)
+                    Object identifier = createIdentifier(
+                        MinaretMod.MOD_ID,
+                        categoryId
+                    );
+                    Object category = getCategoryInstance(inner, identifier);
+                    Constructor<?> ctor = km.getConstructor(
+                        String.class,
+                        int.class,
+                        inner
+                    );
+                    return ctor.newInstance(name, keyCode, category);
+                }
+            }
+
+            // Fallback 1.21.1: KeyMapping(String, int, String)
+            Constructor<?> ctor = km.getConstructor(
+                String.class,
+                int.class,
+                String.class
+            );
+            return ctor.newInstance(name, keyCode, "Minaret Chords");
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot create KeyMapping: " + name, e);
+        }
+    }
+
+    /**
+     * Get or create a Category instance. On 1.21.11+ Category.register(Identifier)
+     * adds to SORT_ORDER and returns the Category. We cache ours to avoid
+     * double-registration.
+     */
+    private static Object cachedCategory;
+
+    private static Object getCategoryInstance(
+        Class<?> categoryClass,
+        Object identifier
+    ) {
+        if (cachedCategory != null) return cachedCategory;
+        try {
+            // Try Category.register(Identifier) — adds to SORT_ORDER
+            for (Method m : categoryClass.getMethods()) {
+                if (
+                    m.getName().equals("register") &&
+                    m.getParameterCount() == 1 &&
+                    m.getParameterTypes()[0].isInstance(identifier)
+                ) {
+                    cachedCategory = m.invoke(null, identifier);
+                    return cachedCategory;
+                }
+            }
+            // Fallback: construct directly
+            Constructor<?> ctor = categoryClass.getConstructor(
+                identifier.getClass()
+            );
+            cachedCategory = ctor.newInstance(identifier);
+            return cachedCategory;
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot create KeyMapping.Category", e);
+        }
+    }
+
+    /**
+     * Register a KeyMapping category via RegisterKeyMappingsEvent (1.21.11+ only).
+     * On 1.21.1 this is a no-op (categories are plain strings).
+     */
+    public static void registerCategory(Object event) {
+        if (cachedCategory == null) return;
+        try {
+            Method rc = event
+                .getClass()
+                .getMethod("registerCategory", cachedCategory.getClass());
+            rc.invoke(event, cachedCategory);
+        } catch (NoSuchMethodException ignored) {
+            // 1.21.1 — no registerCategory method, string categories just work
+        } catch (Exception e) {
+            LOGGER.warn("Failed to register key mapping category", e);
+        }
+    }
+
+    /** Call RegisterKeyMappingsEvent.register(KeyMapping) via reflection. */
+    public static void registerKeyMapping(Object event, Object keyMapping) {
+        try {
+            Class<?> kmClass = Class.forName("net.minecraft.client.KeyMapping");
+            Method reg = event.getClass().getMethod("register", kmClass);
+            reg.invoke(event, keyMapping);
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot register KeyMapping", e);
+        }
+    }
 }

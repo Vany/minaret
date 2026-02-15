@@ -11,6 +11,7 @@ Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 - **WebSocket API** for external application integration
 - **Spawner Agitator** block that enhances mob spawners
 - **Chunk Loader** block that keeps chunks loaded
+- **Warding Post** block that repels hostile mobs
 - **Custom mob effects** (Martial Lightning, Homing Archery, Streamer Protect)
 - **Chord keys** (emacs-style key sequences for keybinding combos)
 
@@ -32,6 +33,11 @@ Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 - Place to keep the chunk force-loaded
 - Persists across server restarts (atomic text file save)
 - Automatic re-activation on server start
+
+**Warding Post**
+- Repels hostile mobs; radius scales with column height (4 blocks per post stacked)
+- Stack multiple posts vertically for larger protection area
+- Found as dungeon loot in temples, strongholds, and mineshafts
 
 **Mob Effects**
 - Martial Lightning: enhanced melee with AoE and tier-based damage
@@ -314,6 +320,8 @@ minaret/
 │   ├── ChunkLoaderBlock.java            # Chunk loader block
 │   ├── ChunkLoaderBlockEntity.java      # Chunk loader block entity
 │   ├── ChunkLoaderData.java             # Chunk loader persistence
+│   ├── WardingPostBlock.java            # Warding post block (mob repulsion, column notify)
+│   ├── WardingPostBlockEntity.java      # Warding post ticker (radius = 4 * column height)
 │   ├── ChordConfig.java                 # Chord key config
 │   ├── *Effect.java / *Handler.java     # Mob effects and handlers
 │   └── client/

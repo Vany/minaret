@@ -158,6 +158,7 @@ auth_password = ""
 - **`SpawnerAgitatorBlock` / `SpawnerAgitatorBlockEntity`**: Event-driven spawner enhancement block
 - **`ChunkLoaderBlock` / `ChunkLoaderBlockEntity`**: Chunk force-loading block
 - **`ChunkLoaderData`**: Persistent chunk loader position registry (atomic text file save)
+- **`WardingPostBlock` / `WardingPostBlockEntity`**: Hostile mob repulsion block (radius scales with column height)
 - **`Compat`**: Cross-version reflection utilities with cached Method/Field objects
 
 ### Design Decisions
@@ -277,7 +278,11 @@ minaret/
 │   ├── ChunkLoaderBlock.java            # Chunk loader block (force/unforce)
 │   ├── ChunkLoaderBlockEntity.java      # Chunk loader BE (minimal)
 │   ├── ChunkLoaderData.java             # Chunk loader position persistence
-│   ├── ChordConfig.java                 # Chord key JSON config
+│   ├── WardingPostBlock.java            # Warding post block (mob repulsion, column notify)
+│   ├── WardingPostBlockEntity.java      # Warding post ticker (radius = 4 * column height)
+│   ├── ChordConfig.java                 # Chord key JSON config (key:/cmd: targets)
+│   ├── MinaretCommands.java             # /minaret subcommands (exec, addkey, addcommand, etc.)
+│   ├── MessageDispatcher.java           # JSON command dispatch (WebSocket + chord cmds)
 │   ├── MartialLightningEffect.java      # Martial lightning mob effect
 │   ├── MartialLightningHandler.java     # Martial lightning event handler
 │   ├── HomingArcheryEffect.java         # Homing archery mob effect
