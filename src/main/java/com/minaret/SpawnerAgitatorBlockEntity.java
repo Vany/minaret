@@ -1,6 +1,5 @@
 package com.minaret;
 
-import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -8,7 +7,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.BaseSpawner;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
@@ -25,18 +23,6 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
     private static final String TAG_ORIGINAL_RANGE = "OriginalPlayerRange";
     private static final String TAG_ORIGINAL_MIN_DELAY = "OriginalMinDelay";
     private static final String TAG_ORIGINAL_MAX_DELAY = "OriginalMaxDelay";
-
-    // Reflection fields — resolved once
-    private static volatile Field rangeField;
-    private static volatile Field minDelayField;
-    private static volatile Field maxDelayField;
-    private static boolean fieldsProbed;
-
-    static {
-        rangeField = findFieldByName("requiredPlayerRange");
-        minDelayField = findFieldByName("minSpawnDelay");
-        maxDelayField = findFieldByName("maxSpawnDelay");
-    }
 
     // Original spawner values (stored by the top agitator only)
     private int originalRange = -1;
@@ -74,68 +60,62 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         ) return;
 
         BaseSpawner spawner = spawnerBE.getSpawner();
-        probeFieldsIfNeeded(spawner);
-        if (rangeField == null) return;
+        SpawnerAccessor.ensureResolved(spawner);
+        if (!SpawnerAccessor.isAvailable()) return;
 
         cachedSpawner = spawner;
-        try {
-            // Save originals on first bind
-            if (originalRange < 0) {
-                originalRange = rangeField.getInt(spawner);
-                if (minDelayField != null) originalMinDelay =
-                    minDelayField.getInt(spawner);
-                if (maxDelayField != null) originalMaxDelay =
-                    maxDelayField.getInt(spawner);
-                persistOriginals();
-            }
-            // Force-load chunk so spawner ticks when players are far away
-            if (level instanceof ServerLevel serverLevel) {
-                ChunkLoaderData.get(serverLevel).add(worldPosition);
-                ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, true);
-            }
-            // Track for shutdown cleanup
-            BOUND_AGITATORS.add(this);
-            // Apply agitation
-            rangeField.setInt(spawner, AGITATED_RANGE);
-            applyDelays(spawner);
-            LOGGER.info(
-                "Agitator bind at {} — stack={}, originals=[range={}, min={}, max={}], spawner now=[range={}, min={}, max={}]",
-                worldPosition,
-                cachedStackSize,
-                originalRange,
-                originalMinDelay,
-                originalMaxDelay,
-                rangeField.getInt(spawner),
-                minDelayField != null ? minDelayField.getInt(spawner) : "N/A",
-                maxDelayField != null ? maxDelayField.getInt(spawner) : "N/A"
-            );
-        } catch (Exception e) {
-            LOGGER.error("Failed to agitate spawner", e);
+
+        // Save originals on first bind
+        if (originalRange < 0) {
+            originalRange = SpawnerAccessor.getRange(spawner);
+            originalMinDelay = SpawnerAccessor.getMinDelay(spawner);
+            originalMaxDelay = SpawnerAccessor.getMaxDelay(spawner);
+            persistOriginals();
         }
+        // Force-load chunk so spawner ticks when players are far away
+        if (level instanceof ServerLevel serverLevel) {
+            ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, true);
+        }
+        // Track for shutdown cleanup
+        BOUND_AGITATORS.add(this);
+        // Apply agitation
+        SpawnerAccessor.setRange(spawner, AGITATED_RANGE);
+        applyDelays(spawner);
+        LOGGER.info(
+            "Agitator bind at {} — stack={}, originals=[range={}, min={}, max={}]",
+            worldPosition,
+            cachedStackSize,
+            originalRange,
+            originalMinDelay,
+            originalMaxDelay
+        );
     }
 
     void unbindSpawner() {
-        if (cachedSpawner != null && originalRange >= 0 && rangeField != null) {
-            try {
-                rangeField.setInt(cachedSpawner, originalRange);
-                if (
-                    minDelayField != null && originalMinDelay >= 0
-                ) minDelayField.setInt(cachedSpawner, originalMinDelay);
-                if (
-                    maxDelayField != null && originalMaxDelay >= 0
-                ) maxDelayField.setInt(cachedSpawner, originalMaxDelay);
-                LOGGER.info(
-                    "Agitator unbind at {} — restored range={}, minDelay={}, maxDelay={}",
-                    worldPosition,
-                    originalRange,
-                    originalMinDelay,
-                    originalMaxDelay
-                );
-            } catch (Exception ignored) {}
+        if (
+            cachedSpawner != null &&
+            originalRange >= 0 &&
+            SpawnerAccessor.isAvailable()
+        ) {
+            SpawnerAccessor.setRange(cachedSpawner, originalRange);
+            if (originalMinDelay >= 0) SpawnerAccessor.setMinDelay(
+                cachedSpawner,
+                originalMinDelay
+            );
+            if (originalMaxDelay >= 0) SpawnerAccessor.setMaxDelay(
+                cachedSpawner,
+                originalMaxDelay
+            );
+            LOGGER.info(
+                "Agitator unbind at {} — restored range={}, minDelay={}, maxDelay={}",
+                worldPosition,
+                originalRange,
+                originalMinDelay,
+                originalMaxDelay
+            );
         }
         // Unforce chunk
         if (level instanceof ServerLevel serverLevel) {
-            ChunkLoaderData.get(serverLevel).remove(worldPosition);
             ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, false);
         }
         BOUND_AGITATORS.remove(this);
@@ -148,14 +128,13 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         }
     }
 
-    private void applyDelays(BaseSpawner spawner) throws Exception {
-        int n = cachedStackSize;
-        if (n < 1) n = 1;
-        if (minDelayField != null && originalMinDelay > 0) minDelayField.setInt(
+    private void applyDelays(BaseSpawner spawner) {
+        int n = Math.max(1, cachedStackSize);
+        if (originalMinDelay > 0) SpawnerAccessor.setMinDelay(
             spawner,
             Math.max(1, originalMinDelay / n)
         );
-        if (maxDelayField != null && originalMaxDelay > 0) maxDelayField.setInt(
+        if (originalMaxDelay > 0) SpawnerAccessor.setMaxDelay(
             spawner,
             Math.max(1, originalMaxDelay / n)
         );
@@ -197,17 +176,13 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
 
     void recalcStackSize(BlockPos exclude) {
         if (level == null) return;
-        int count = 1;
-        BlockPos check = worldPosition.below();
-        while (
-            level.getBlockState(check).getBlock() instanceof
-                SpawnerAgitatorBlock
-        ) {
-            if (check.equals(exclude)) break;
-            count++;
-            check = check.below();
-        }
-        cachedStackSize = count;
+        cachedStackSize = ColumnHelper.countBelow(
+            level,
+            worldPosition,
+            exclude,
+            SpawnerAgitatorBlock.class,
+            false
+        );
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────
@@ -242,62 +217,5 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
             data.remove(TAG_ORIGINAL_MAX_DELAY);
         }
         setChanged();
-    }
-
-    // ── Reflection (resolved once) ──────────────────────────────────────
-
-    private static Field findFieldByName(String name) {
-        try {
-            Field f = BaseSpawner.class.getDeclaredField(name);
-            f.setAccessible(true);
-            return f;
-        } catch (NoSuchFieldException e) {
-            return null;
-        }
-    }
-
-    private static synchronized void probeFieldsIfNeeded(BaseSpawner spawner) {
-        if (fieldsProbed) return;
-        fieldsProbed = true;
-        if (rangeField == null) rangeField = probeByValue(
-            spawner,
-            16,
-            "requiredPlayerRange"
-        );
-        if (minDelayField == null) minDelayField = probeByValue(
-            spawner,
-            200,
-            "minSpawnDelay"
-        );
-        if (maxDelayField == null) maxDelayField = probeByValue(
-            spawner,
-            800,
-            "maxSpawnDelay"
-        );
-    }
-
-    private static Field probeByValue(
-        BaseSpawner spawner,
-        int value,
-        String hint
-    ) {
-        try {
-            for (Field f : BaseSpawner.class.getDeclaredFields()) {
-                if (f.getType() != int.class) continue;
-                f.setAccessible(true);
-                if (f.getInt(spawner) == value) {
-                    LOGGER.info(
-                        "Found BaseSpawner.{} as {}",
-                        hint,
-                        f.getName()
-                    );
-                    return f;
-                }
-            }
-        } catch (Exception e) {
-            LOGGER.error("Error probing for BaseSpawner.{}", hint, e);
-        }
-        LOGGER.warn("Could not find BaseSpawner.{}", hint);
-        return null;
     }
 }

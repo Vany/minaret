@@ -2,7 +2,7 @@ package com.minaret.client;
 
 import com.minaret.ChordConfig;
 import com.minaret.ChordTarget;
-import com.minaret.Compat;
+import com.minaret.KeyMappingCompat;
 import com.minaret.MessageDispatcher;
 import com.minaret.MinaretMod;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -36,13 +36,13 @@ public class ChordKeyHandler {
     public static void registerKeys(Object event) {
         int metaCode = KeyNames.toKeyCode(ChordConfig.get().getMetaKey());
         if (metaCode < 0) metaCode = InputConstants.KEY_F;
-        metaKeyMapping = Compat.createKeyMapping(
+        metaKeyMapping = KeyMappingCompat.createKeyMapping(
             "Chord Meta Key",
             metaCode,
             "chords"
         );
-        Compat.registerCategory(event);
-        Compat.registerKeyMapping(event, metaKeyMapping);
+        KeyMappingCompat.registerCategory(event);
+        KeyMappingCompat.registerKeyMapping(event, metaKeyMapping);
     }
 
     private static int getMetaKeyCode() {

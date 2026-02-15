@@ -1,6 +1,5 @@
 package com.minaret;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -139,13 +138,8 @@ public class HomingArcheryHandler {
 
     private static void cleanupStaleEntries() {
         long now = System.currentTimeMillis();
-        Iterator<Map.Entry<UUID, TrackedBullet>> it = bulletDamageMap
+        bulletDamageMap
             .entrySet()
-            .iterator();
-        while (it.hasNext()) {
-            if (now - it.next().getValue().createdAt > STALE_ENTRY_MILLIS) {
-                it.remove();
-            }
-        }
+            .removeIf(e -> now - e.getValue().createdAt > STALE_ENTRY_MILLIS);
     }
 }

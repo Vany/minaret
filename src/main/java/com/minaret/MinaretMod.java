@@ -233,19 +233,17 @@ public class MinaretMod {
         }
 
         try {
-            String wsUrl = MinaretConfig.WEBSOCKET_URL.get();
-            String host = parseHost(wsUrl);
-            int port = parsePort(wsUrl);
+            HostPort hp = HostPort.parse(MinaretConfig.WEBSOCKET_URL.get());
 
             webSocketServer = new WebSocketServer(
-                host,
-                port,
+                hp.host,
+                hp.port,
                 server,
                 MinaretConfig.AUTH_USERNAME.get(),
                 MinaretConfig.AUTH_PASSWORD.get()
             );
             webSocketServer.start();
-            LOGGER.info("WebSocket server started on {}:{}", host, port);
+            LOGGER.info("WebSocket server started on {}:{}", hp.host, hp.port);
         } catch (Exception e) {
             LOGGER.error("Failed to start WebSocket server", e);
         }
@@ -268,22 +266,28 @@ public class MinaretMod {
         }
     }
 
-    private static String parseHost(String url) {
-        int colon = url.lastIndexOf(':');
-        return colon > 0
-            ? url.substring(0, colon)
-            : (url.isEmpty() ? "localhost" : url);
-    }
+    private record HostPort(String host, int port) {
+        private static final int DEFAULT_PORT = 8765;
 
-    private static int parsePort(String url) {
-        int colon = url.lastIndexOf(':');
-        if (colon >= 0 && colon + 1 < url.length()) {
-            try {
-                return Integer.parseInt(url.substring(colon + 1));
-            } catch (NumberFormatException e) {
-                LOGGER.warn("Invalid port in '{}', using 8765", url);
+        static HostPort parse(String url) {
+            int colon = url.lastIndexOf(':');
+            String host =
+                colon > 0
+                    ? url.substring(0, colon)
+                    : (url.isEmpty() ? "localhost" : url);
+            int port = DEFAULT_PORT;
+            if (colon >= 0 && colon + 1 < url.length()) {
+                try {
+                    port = Integer.parseInt(url.substring(colon + 1));
+                } catch (NumberFormatException e) {
+                    LOGGER.warn(
+                        "Invalid port in '{}', using {}",
+                        url,
+                        DEFAULT_PORT
+                    );
+                }
             }
+            return new HostPort(host, port);
         }
-        return 8765;
     }
 }

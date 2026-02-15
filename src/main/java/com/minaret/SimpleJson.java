@@ -273,12 +273,6 @@ public class SimpleJson {
         return "\"" + escapeString(value.toString()) + "\"";
     }
 
-    /** Generate from flat string map (legacy convenience). */
-    public static String generate(Map<String, String> data) {
-        Map<String, Object> typed = new LinkedHashMap<>(data);
-        return generate((Object) typed);
-    }
-
     public static String escapeString(String str) {
         return str
             .replace("\\", "\\\\")

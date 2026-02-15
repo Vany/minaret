@@ -32,11 +32,7 @@ public class MartialLightningHandler {
 
         LivingEntity target = event.getEntity();
         ItemStack weapon = player.getMainHandItem();
-        String itemPath = weapon.isEmpty()
-            ? ""
-            : BuiltInRegistries.ITEM.getKey(weapon.getItem()).getPath();
-
-        ToolCategory category = categorize(itemPath, weapon.isEmpty());
+        ToolCategory category = categorize(weapon);
 
         event.setAmount(event.getAmount() * category.damageMultiplier);
 
@@ -114,11 +110,12 @@ public class MartialLightningHandler {
         }
     }
 
-    private static ToolCategory categorize(String itemPath, boolean empty) {
-        if (empty) return ToolCategory.BARE_HAND;
-        if (itemPath.startsWith("wooden_")) return ToolCategory.WOODEN;
-        if (itemPath.startsWith("stone_")) return ToolCategory.STONE;
-        if (itemPath.startsWith("iron_")) return ToolCategory.IRON;
+    private static ToolCategory categorize(ItemStack weapon) {
+        if (weapon.isEmpty()) return ToolCategory.BARE_HAND;
+        String path = BuiltInRegistries.ITEM.getKey(weapon.getItem()).getPath();
+        if (path.startsWith("wooden_")) return ToolCategory.WOODEN;
+        if (path.startsWith("stone_")) return ToolCategory.STONE;
+        if (path.startsWith("iron_")) return ToolCategory.IRON;
         return ToolCategory.OTHER;
     }
 

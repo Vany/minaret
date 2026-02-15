@@ -70,27 +70,19 @@ public class WardingPostBlockEntity extends BlockEntity {
 
     void recalcColumn(BlockPos exclude) {
         if (level == null) return;
-
-        // Check if there's a warding post above (not this one being top)
-        BlockPos above = worldPosition.above();
-        if (exclude != null && above.equals(exclude)) above = above.above();
-        isTopOfColumn = !(level.getBlockState(above).getBlock() instanceof
-                WardingPostBlock);
-
-        // Count posts below (including self)
-        int count = 1;
-        BlockPos check = worldPosition.below();
-        while (
-            level.getBlockState(check).getBlock() instanceof WardingPostBlock
-        ) {
-            if (exclude != null && check.equals(exclude)) {
-                check = check.below();
-                continue;
-            }
-            count++;
-            check = check.below();
-        }
-        cachedColumnHeight = count;
+        isTopOfColumn = ColumnHelper.isTopOfColumn(
+            level,
+            worldPosition,
+            exclude,
+            WardingPostBlock.class
+        );
+        cachedColumnHeight = ColumnHelper.countBelow(
+            level,
+            worldPosition,
+            exclude,
+            WardingPostBlock.class,
+            true
+        );
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────

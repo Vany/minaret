@@ -157,7 +157,7 @@ public class WebSocketServer {
                     "\r\n\r\n"
             );
 
-            Connection conn = new Connection(socket);
+            Connection conn = new Connection(socket, mcServer, connections);
             connections.add(conn);
             executor.submit(conn::run);
             LOGGER.info(
@@ -201,17 +201,25 @@ public class WebSocketServer {
 
     // ── Connection ──────────────────────────────────────────────────────
 
-    private class Connection {
+    private static class Connection {
 
         private final Socket socket;
         private final InputStream input;
         private final OutputStream output;
+        private final MinecraftServer mcServer;
+        private final Set<Connection> connections;
         private volatile boolean active = true;
 
-        Connection(Socket socket) throws IOException {
+        Connection(
+            Socket socket,
+            MinecraftServer mcServer,
+            Set<Connection> connections
+        ) throws IOException {
             this.socket = socket;
             this.input = socket.getInputStream();
             this.output = socket.getOutputStream();
+            this.mcServer = mcServer;
+            this.connections = connections;
         }
 
         void run() {

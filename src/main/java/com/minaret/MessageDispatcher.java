@@ -17,6 +17,8 @@ import org.apache.logging.log4j.Logger;
 public final class MessageDispatcher {
 
     private static final Logger LOGGER = LogManager.getLogger();
+    private static final String COLOR_GRAY = "\u00a77";
+    private static final String COLOR_WHITE = "\u00a7f";
 
     private MessageDispatcher() {}
 
@@ -61,14 +63,17 @@ public final class MessageDispatcher {
         server.execute(() -> {
             StringBuilder sb = new StringBuilder();
             if (chat != null && !chat.isEmpty()) {
-                sb.append("\u00a77[").append(chat).append("]");
+                sb.append(COLOR_GRAY).append("[").append(chat).append("]");
             }
             if (user != null && !user.isEmpty()) {
-                sb.append("\u00a7f<").append(user).append("> ");
+                sb.append(COLOR_WHITE).append("<").append(user).append("> ");
             } else {
-                sb.append("\u00a77[WebSocket] \u00a7f");
+                sb
+                    .append(COLOR_GRAY)
+                    .append("[WebSocket] ")
+                    .append(COLOR_WHITE);
             }
-            sb.append("\u00a7f").append(chatMessage);
+            sb.append(COLOR_WHITE).append(chatMessage);
 
             Component component = Component.literal(sb.toString());
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
@@ -202,27 +207,31 @@ public final class MessageDispatcher {
         String type,
         Object... extra
     ) {
-        Map<String, Object> r = new LinkedHashMap<>();
-        r.put("status", "success");
-        r.put("type", type);
-        for (int i = 0; i + 1 < extra.length; i += 2) {
-            r.put((String) extra[i], extra[i + 1]);
-        }
-        respond.accept(SimpleJson.generate(r));
+        respond(respond, "success", type, null, extra);
     }
 
     private static void respondError(
         Consumer<String> respond,
         String type,
         String error,
-        String... extra
+        Object... extra
+    ) {
+        respond(respond, "error", type, error, extra);
+    }
+
+    private static void respond(
+        Consumer<String> respond,
+        String status,
+        String type,
+        String error,
+        Object... extra
     ) {
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put("status", "error");
-        r.put("error", error);
+        r.put("status", status);
+        if (error != null) r.put("error", error);
         if (type != null) r.put("type", type);
         for (int i = 0; i + 1 < extra.length; i += 2) {
-            r.put(extra[i], extra[i + 1]);
+            r.put((String) extra[i], extra[i + 1]);
         }
         respond.accept(SimpleJson.generate(r));
     }
