@@ -31,7 +31,7 @@ public class ChordKeyHandler {
 
     // ── Meta key ────────────────────────────────────────────────────────
 
-    private static Object metaKeyMapping;
+    private static volatile Object metaKeyMapping;
 
     public static void registerKeys(Object event) {
         int metaCode = KeyNames.toKeyCode(ChordConfig.get().getMetaKey());
@@ -134,7 +134,7 @@ public class ChordKeyHandler {
 
     // ── Trie ────────────────────────────────────────────────────────────
 
-    private static ChordTrie.Node trieRoot = new ChordTrie.Node();
+    private static volatile ChordTrie.Node trieRoot = new ChordTrie.Node();
 
     public static void rebuildTrie() {
         trieRoot = ChordTrie.build(ChordConfig.get().getChordSequences());

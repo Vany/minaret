@@ -1,6 +1,8 @@
 package com.minaret;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
@@ -20,15 +22,16 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
     private static final int AGITATED_RANGE = -1;
     private static final Set<SpawnerAgitatorBlockEntity> BOUND_AGITATORS =
         Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private static final String TAG_ORIGINAL_RANGE = "OriginalPlayerRange";
-    private static final String TAG_ORIGINAL_MIN_DELAY = "OriginalMinDelay";
-    private static final String TAG_ORIGINAL_MAX_DELAY = "OriginalMaxDelay";
+    private static final String TAG_SPAWNER_COUNT = "SpawnerCount";
+    private static final String TAG_ORIGINAL_RANGE = "OriginalRange_";
+    private static final String TAG_ORIGINAL_MIN_DELAY = "OriginalMinDelay_";
+    private static final String TAG_ORIGINAL_MAX_DELAY = "OriginalMaxDelay_";
 
-    // Original spawner values (stored by the top agitator only)
-    private int originalRange = -1;
-    private int originalMinDelay = -1;
-    private int originalMaxDelay = -1;
-    private BaseSpawner cachedSpawner;
+    // Multiple spawners bound by the topmost agitator
+    private final List<BaseSpawner> cachedSpawners = new ArrayList<>();
+    private final List<Integer> originalRanges = new ArrayList<>();
+    private final List<Integer> originalMinDelays = new ArrayList<>();
+    private final List<Integer> originalMaxDelays = new ArrayList<>();
     private int cachedStackSize = 1;
 
     public SpawnerAgitatorBlockEntity(BlockPos pos, BlockState state) {
@@ -50,68 +53,89 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
             level.getBlockState(above).getBlock() instanceof
                 SpawnerAgitatorBlock
         ) {
-            cachedSpawner = null;
+            cachedSpawners.clear();
             return;
         }
-        if (!level.getBlockState(above).is(Blocks.SPAWNER)) return;
-        if (
-            !(level.getBlockEntity(above) instanceof
-                    SpawnerBlockEntity spawnerBE)
-        ) return;
 
-        BaseSpawner spawner = spawnerBE.getSpawner();
-        SpawnerAccessor.ensureResolved(spawner);
-        if (!SpawnerAccessor.isAvailable()) return;
+        // Walk up collecting all contiguous spawners
+        List<BaseSpawner> foundSpawners = new ArrayList<>();
+        BlockPos check = above;
+        while (true) {
+            if (exclude != null && check.equals(exclude)) {
+                check = check.above();
+                continue;
+            }
+            if (!level.getBlockState(check).is(Blocks.SPAWNER)) break;
+            if (
+                !(level.getBlockEntity(check) instanceof
+                        SpawnerBlockEntity spawnerBE)
+            ) break;
+            BaseSpawner spawner = spawnerBE.getSpawner();
+            SpawnerAccessor.ensureResolved(spawner);
+            if (!SpawnerAccessor.isAvailable()) return;
+            foundSpawners.add(spawner);
+            check = check.above();
+        }
 
-        cachedSpawner = spawner;
+        if (foundSpawners.isEmpty()) return;
 
-        // Save originals on first bind
-        if (originalRange < 0) {
-            originalRange = SpawnerAccessor.getRange(spawner);
-            originalMinDelay = SpawnerAccessor.getMinDelay(spawner);
-            originalMaxDelay = SpawnerAccessor.getMaxDelay(spawner);
+        cachedSpawners.clear();
+        cachedSpawners.addAll(foundSpawners);
+
+        // Save originals on first bind (list empty means first time)
+        if (originalRanges.isEmpty()) {
+            for (BaseSpawner spawner : cachedSpawners) {
+                originalRanges.add(SpawnerAccessor.getRange(spawner));
+                originalMinDelays.add(SpawnerAccessor.getMinDelay(spawner));
+                originalMaxDelays.add(SpawnerAccessor.getMaxDelay(spawner));
+            }
             persistOriginals();
         }
-        // Force-load chunk so spawner ticks when players are far away
+
+        // Force-load chunk so spawners tick when players are far away
         if (level instanceof ServerLevel serverLevel) {
             ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, true);
         }
         // Track for shutdown cleanup
         BOUND_AGITATORS.add(this);
-        // Apply agitation
-        SpawnerAccessor.setRange(spawner, AGITATED_RANGE);
-        applyDelays(spawner);
+        // Apply agitation to all spawners
+        for (int i = 0; i < cachedSpawners.size(); i++) {
+            BaseSpawner spawner = cachedSpawners.get(i);
+            SpawnerAccessor.setRange(spawner, AGITATED_RANGE);
+            applyDelays(spawner, i);
+        }
         LOGGER.info(
-            "Agitator bind at {} — stack={}, originals=[range={}, min={}, max={}]",
+            "Agitator bind at {} — stack={}, spawners={}, originals={}",
             worldPosition,
             cachedStackSize,
-            originalRange,
-            originalMinDelay,
-            originalMaxDelay
+            cachedSpawners.size(),
+            originalRanges
         );
     }
 
     void unbindSpawner() {
-        if (
-            cachedSpawner != null &&
-            originalRange >= 0 &&
-            SpawnerAccessor.isAvailable()
-        ) {
-            SpawnerAccessor.setRange(cachedSpawner, originalRange);
-            if (originalMinDelay >= 0) SpawnerAccessor.setMinDelay(
-                cachedSpawner,
-                originalMinDelay
-            );
-            if (originalMaxDelay >= 0) SpawnerAccessor.setMaxDelay(
-                cachedSpawner,
-                originalMaxDelay
-            );
+        if (!cachedSpawners.isEmpty() && SpawnerAccessor.isAvailable()) {
+            int count = Math.min(cachedSpawners.size(), originalRanges.size());
+            for (int i = 0; i < count; i++) {
+                BaseSpawner spawner = cachedSpawners.get(i);
+                int range = originalRanges.get(i);
+                int minDelay = originalMinDelays.get(i);
+                int maxDelay = originalMaxDelays.get(i);
+                if (range >= 0) SpawnerAccessor.setRange(spawner, range);
+                if (minDelay >= 0) SpawnerAccessor.setMinDelay(
+                    spawner,
+                    minDelay
+                );
+                if (maxDelay >= 0) SpawnerAccessor.setMaxDelay(
+                    spawner,
+                    maxDelay
+                );
+            }
             LOGGER.info(
-                "Agitator unbind at {} — restored range={}, minDelay={}, maxDelay={}",
+                "Agitator unbind at {} — restored {} spawners, ranges={}",
                 worldPosition,
-                originalRange,
-                originalMinDelay,
-                originalMaxDelay
+                count,
+                originalRanges
             );
         }
         // Unforce chunk
@@ -119,29 +143,35 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
             ChunkLoaderBlock.forceChunk(serverLevel, worldPosition, false);
         }
         BOUND_AGITATORS.remove(this);
-        cachedSpawner = null;
-        originalRange = -1;
-        originalMinDelay = -1;
-        originalMaxDelay = -1;
+        cachedSpawners.clear();
+        originalRanges.clear();
+        originalMinDelays.clear();
+        originalMaxDelays.clear();
         if (level != null && !level.isClientSide()) {
             persistOriginals();
         }
     }
 
-    private void applyDelays(BaseSpawner spawner) {
+    private void applyDelays(BaseSpawner spawner, int index) {
         int n = Math.max(1, cachedStackSize);
-        if (originalMinDelay > 0) SpawnerAccessor.setMinDelay(
-            spawner,
-            Math.max(1, originalMinDelay / n)
-        );
-        if (originalMaxDelay > 0) SpawnerAccessor.setMaxDelay(
-            spawner,
-            Math.max(1, originalMaxDelay / n)
-        );
+        if (index < originalMinDelays.size()) {
+            int minDelay = originalMinDelays.get(index);
+            if (minDelay > 0) SpawnerAccessor.setMinDelay(
+                spawner,
+                Math.max(1, minDelay / n)
+            );
+        }
+        if (index < originalMaxDelays.size()) {
+            int maxDelay = originalMaxDelays.get(index);
+            if (maxDelay > 0) SpawnerAccessor.setMaxDelay(
+                spawner,
+                Math.max(1, maxDelay / n)
+            );
+        }
     }
 
     boolean isBound() {
-        return cachedSpawner != null;
+        return !cachedSpawners.isEmpty();
     }
 
     static void unbindAll() {
@@ -157,13 +187,13 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
             level.getBlockState(above).getBlock() instanceof
                 SpawnerAgitatorBlock
         ) {
-            if (cachedSpawner != null) unbindSpawner();
+            if (!cachedSpawners.isEmpty()) unbindSpawner();
             return;
         }
         boolean spawnerAbove = level.getBlockState(above).is(Blocks.SPAWNER);
-        if (spawnerAbove && cachedSpawner == null) {
+        if (spawnerAbove && cachedSpawners.isEmpty()) {
             bindSpawner();
-        } else if (!spawnerAbove && cachedSpawner != null) {
+        } else if (!spawnerAbove && !cachedSpawners.isEmpty()) {
             unbindSpawner();
         }
     }
@@ -191,14 +221,23 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
     public void onLoad() {
         super.onLoad();
         CompoundTag data = getPersistentData();
-        if (data.contains(TAG_ORIGINAL_RANGE)) originalRange = Compat.getTagInt(
-            data,
-            TAG_ORIGINAL_RANGE
-        );
-        if (data.contains(TAG_ORIGINAL_MIN_DELAY)) originalMinDelay =
-            Compat.getTagInt(data, TAG_ORIGINAL_MIN_DELAY);
-        if (data.contains(TAG_ORIGINAL_MAX_DELAY)) originalMaxDelay =
-            Compat.getTagInt(data, TAG_ORIGINAL_MAX_DELAY);
+        if (data.contains(TAG_SPAWNER_COUNT)) {
+            int count = Compat.getTagInt(data, TAG_SPAWNER_COUNT);
+            originalRanges.clear();
+            originalMinDelays.clear();
+            originalMaxDelays.clear();
+            for (int i = 0; i < count; i++) {
+                originalRanges.add(
+                    Compat.getTagInt(data, TAG_ORIGINAL_RANGE + i)
+                );
+                originalMinDelays.add(
+                    Compat.getTagInt(data, TAG_ORIGINAL_MIN_DELAY + i)
+                );
+                originalMaxDelays.add(
+                    Compat.getTagInt(data, TAG_ORIGINAL_MAX_DELAY + i)
+                );
+            }
+        }
         recalcStackSize();
         bindSpawner();
     }
@@ -207,14 +246,29 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
 
     private void persistOriginals() {
         CompoundTag data = getPersistentData();
-        if (originalRange >= 0) {
-            data.putInt(TAG_ORIGINAL_RANGE, originalRange);
-            data.putInt(TAG_ORIGINAL_MIN_DELAY, originalMinDelay);
-            data.putInt(TAG_ORIGINAL_MAX_DELAY, originalMaxDelay);
-        } else {
-            data.remove(TAG_ORIGINAL_RANGE);
-            data.remove(TAG_ORIGINAL_MIN_DELAY);
-            data.remove(TAG_ORIGINAL_MAX_DELAY);
+        // Clear old entries first
+        if (data.contains(TAG_SPAWNER_COUNT)) {
+            int oldCount = Compat.getTagInt(data, TAG_SPAWNER_COUNT);
+            for (int i = 0; i < oldCount; i++) {
+                data.remove(TAG_ORIGINAL_RANGE + i);
+                data.remove(TAG_ORIGINAL_MIN_DELAY + i);
+                data.remove(TAG_ORIGINAL_MAX_DELAY + i);
+            }
+            data.remove(TAG_SPAWNER_COUNT);
+        }
+        if (!originalRanges.isEmpty()) {
+            data.putInt(TAG_SPAWNER_COUNT, originalRanges.size());
+            for (int i = 0; i < originalRanges.size(); i++) {
+                data.putInt(TAG_ORIGINAL_RANGE + i, originalRanges.get(i));
+                data.putInt(
+                    TAG_ORIGINAL_MIN_DELAY + i,
+                    originalMinDelays.get(i)
+                );
+                data.putInt(
+                    TAG_ORIGINAL_MAX_DELAY + i,
+                    originalMaxDelays.get(i)
+                );
+            }
         }
         setChanged();
     }

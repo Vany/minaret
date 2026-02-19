@@ -38,7 +38,7 @@ No tests exist yet. `make test` runs `./gradlew test` but there are no test sour
 - **Compat** — Cross-version reflection utilities. Caches all `Method`/`Class` objects in static fields (resolved once at class load). Handles `hasPermission`, `getTagInt`, `createBlockEntityType`, `setBlockId`/`setItemId`, `isClient` across 1.21.1 and 1.21.11.
 
 ### Block subsystem
-- **SpawnerAgitatorBlock / SpawnerAgitatorBlockEntity** — Event-driven spawner enhancement. Binds to spawner above on place/load, caches `BaseSpawner` directly. Ticker only decrements `spawnDelay` (one reflection field read+write per tick). All cleanup in `playerWillDestroy()`, never in `setRemoved()`. Uses `AGITATED_RANGE = 32767` (not -1) to allow clean shutdown.
+- **SpawnerAgitatorBlock / SpawnerAgitatorBlockEntity** — Event-driven spawner enhancement. Column layout: `[agitators...][spawners...]`. Topmost agitator binds to all contiguous spawners above, caches `BaseSpawner` refs, sets range to -1, scales delays by agitator count. All cleanup in `playerWillDestroy()`, never in `setRemoved()`.
 - **ChunkLoaderBlock / ChunkLoaderBlockEntity** — Force-loads chunk on place, unforces on destroy. `ChunkLoaderBlockEntity` is minimal (no ticker, no `setRemoved` override).
 - **ChunkLoaderData** — Persists chunk loader positions in `minaret_chunk_loaders.txt` (plain text, atomic save via tmp+rename). Singleton per ServerLevel. `forceAll()`/`reset()` called on server start/stop.
 

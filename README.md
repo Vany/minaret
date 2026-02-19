@@ -9,6 +9,7 @@
 
 Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 - **WebSocket API** for external application integration
+- **Event broadcasting** — server pushes game events to connected clients
 - **Spawner Agitator** block that enhances mob spawners
 - **Chunk Loader** block that keeps chunks loaded
 - **Warding Post** block that repels hostile mobs
@@ -21,10 +22,11 @@ Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 - RFC 6455 compliant WebSocket server, zero external dependencies
 - Optional HTTP Basic Authentication
 - Chat broadcast, command execution, effect queries via JSON
+- Server pushes game events to all connected clients
 - Sub-100ms latency, thread-safe
 
 **Spawner Agitator**
-- Place above a mob spawner to increase its range and speed
+- Place below a mob spawner to increase its range and speed
 - Stack multiple agitators for faster spawning
 - Event-driven architecture with minimal per-tick overhead
 - Clean shutdown behavior (no server hang)
@@ -46,7 +48,7 @@ Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 
 **Chord Keys** (client-side)
 - Emacs-style key sequences (e.g. `f>1`, `f>f>1`)
-- 200 virtual keybinding slots, assignable in Controls
+- Targets: KeyMapping names or WebSocket JSON commands
 - Trie-based state machine with timeout and overlay
 
 ## 🚀 Quick Start
@@ -65,14 +67,17 @@ Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 const ws = new WebSocket('ws://localhost:8765');
 
 // Send chat message
-ws.send(JSON.stringify({
-  \"message\": \"Hello from external app! 👋\"
-}));
+ws.send(JSON.stringify({ "message": "Hello from external app!" }));
 
-// Execute server command  
-ws.send(JSON.stringify({
-  \"command\": \"time set day\"
-}));
+// Execute server command
+ws.send(JSON.stringify({ "command": "time set day" }));
+
+// Receive server events
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.event === 'player_join') console.log(msg.player + ' joined');
+  if (msg.event === 'player_death') console.log(msg.player + ' died: ' + msg.cause);
+};
 ```
 
 ## ⚙️ Configuration
@@ -81,24 +86,20 @@ ws.send(JSON.stringify({
 
 ```toml
 # WebSocket server binding
-websocket_url = \"localhost:8765\"
+websocket_url = "localhost:8765"
 
 # Authentication (optional - leave empty to disable)
-auth_username = \"\"
-auth_password = \"\"
+auth_username = ""
+auth_password = ""
 ```
-
-### Configuration Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `websocket_url` | `localhost:8765` | Host:port for WebSocket server |
-| `auth_username` | `\"\"` | Username for HTTP Basic Auth (empty = disabled) |
-| `auth_password` | `\"\"` | Password for HTTP Basic Auth |
+| `auth_username` | `""` | Username for HTTP Basic Auth (empty = disabled) |
+| `auth_password` | `""` | Password for HTTP Basic Auth |
 
 ## 📡 WebSocket API
-
-### Connection
 
 **Endpoint:** `ws://localhost:8765` (configurable)
 
@@ -107,68 +108,69 @@ auth_password = \"\"
 Authorization: Basic <base64(username:password)>
 ```
 
-### Message Protocol
+All messages use JSON with UTF-8 encoding.
 
-All messages use JSON format with UTF-8 encoding.
+### Client → Server (requests)
 
-#### Chat Messages
-
-**Request:**
+#### Chat message
 ```json
-{
-  \"message\": \"Your message here\"
-}
+{"message": "text", "user": "name", "chat": "discord"}
+```
+`user` and `chat` are optional.
+
+**Response:** `{"status":"success","type":"message"}`
+
+#### Command execution
+```json
+{"command": "time set day"}
 ```
 
 **Response:**
 ```json
-{
-  \"status\": \"success\",
-  \"type\": \"message\"
-}
+{"status":"success","type":"command","command":"time set day","result":"1"}
+{"status":"error","type":"command","error":"...","command":"...","result":"0"}
 ```
 
-#### Command Execution
-
-**Request:**
+#### Query player effects
 ```json
-{
-  \"command\": \"time set night\"
-}
+{"getEffects": "PlayerName"}
 ```
 
-**Success Response:**
+**Response:**
 ```json
-{
-  \"status\": \"success\",
-  \"type\": \"command\",
-  \"command\": \"time set night\",
-  \"result\": \"1\"
-}
+{"status":"success","type":"getEffects","player":"PlayerName","effects":[...]}
 ```
 
-**Error Response:**
+### Server → Client (events)
+
+The server pushes these events to all connected clients automatically:
+
+| Event | Payload |
+|-------|---------|
+| `player_join` | `player` |
+| `player_leave` | `player` |
+| `player_death` | `player`, `cause` (e.g. `fall`, `drown`, `mob`) |
+| `player_kill` | `player`, `mob` (e.g. `zombie`, `creeper`) |
+| `player_eat` | `player`, `item`, `nutrition`, `saturation` |
+| `player_heal` | `player`, `amount` — aggregated; fires at ≥10 HP or 1 min |
+
+Examples:
 ```json
-{
-  \"status\": \"error\",
-  \"type\": \"command\",
-  \"error\": \"Unknown command\",
-  \"command\": \"invalid_command\",
-  \"result\": \"0\"
-}
+{"event":"player_join","player":"Steve"}
+{"event":"player_death","player":"Steve","cause":"fall"}
+{"event":"player_kill","player":"Steve","mob":"zombie"}
+{"event":"player_eat","player":"Steve","item":"bread","nutrition":5,"saturation":6.0}
+{"event":"player_heal","player":"Steve","amount":"12.5"}
 ```
 
 ### Error Handling
 
-Common error scenarios and responses:
-
-| Error Type | HTTP Status | Description |
-|------------|-------------|-------------|
-| `401 Unauthorized` | 401 | Invalid/missing authentication |
-| `Invalid JSON` | - | Malformed JSON message |
-| `Unknown message type` | - | Missing `message` or `command` field |
-| `Command failed` | - | Command returned error code 0 |
-| `Permission denied` | - | Command requires higher permissions |
+| Error | Description |
+|-------|-------------|
+| `401 Unauthorized` | Invalid/missing authentication |
+| `Invalid JSON` | Malformed JSON message |
+| `Unknown message type` | Missing `message`, `command`, or `getEffects` field |
+| `Command failed` | Command returned error code 0 |
 
 ## 🛠️ Examples
 
@@ -184,20 +186,17 @@ const ws = new WebSocket('ws://localhost:8765', {
 });
 
 ws.on('open', () => {
-  // Announce connection
-  ws.send(JSON.stringify({
-    message: '🤖 Bot connected!'
-  }));
-  
-  // Give items to player
-  ws.send(JSON.stringify({
-    command: 'give @a diamond 64'
-  }));
+  ws.send(JSON.stringify({ message: 'Bot connected!' }));
+  ws.send(JSON.stringify({ command: 'give @a diamond 64' }));
 });
 
 ws.on('message', (data) => {
-  const response = JSON.parse(data);
-  console.log('Server response:', response);
+  const msg = JSON.parse(data);
+  if (msg.event) {
+    console.log('Event:', msg);
+  } else {
+    console.log('Response:', msg);
+  }
 });
 ```
 
@@ -209,79 +208,56 @@ import json
 import base64
 
 def on_message(ws, message):
-    response = json.loads(message)
-    print(f\"Server: {response}\")
+    msg = json.loads(message)
+    if 'event' in msg:
+        print(f"Event: {msg}")
+    else:
+        print(f"Response: {msg}")
 
 def on_open(ws):
-    # Send chat message
-    ws.send(json.dumps({
-        \"message\": \"🐍 Python bot online!\"
-    }))
-    
-    # Execute commands
-    ws.send(json.dumps({
-        \"command\": \"weather clear\"
-    }))
+    ws.send(json.dumps({"message": "Python bot online!"}))
+    ws.send(json.dumps({"command": "weather clear"}))
 
-# Setup authentication header
 auth = base64.b64encode(b'user:pass').decode('ascii')
-headers = [f\"Authorization: Basic {auth}\"]
-
-ws = websocket.WebSocketApp(\"ws://localhost:8765\",
-                          header=headers,
-                          on_open=on_open,
-                          on_message=on_message)
+ws = websocket.WebSocketApp("ws://localhost:8765",
+                            header=[f"Authorization: Basic {auth}"],
+                            on_open=on_open,
+                            on_message=on_message)
 ws.run_forever()
 ```
 
 ### Command Line Testing
 
 ```bash
-# Install wscat globally
 npm install -g wscat
 
 # Connect without authentication
 wscat -c ws://localhost:8765
 
-# Connect with authentication  
-wscat -c ws://localhost:8765 -H \"Authorization: Basic $(echo -n 'user:pass' | base64)\"
+# Connect with authentication
+wscat -c ws://localhost:8765 -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 
-# Test messages (type these after connecting)
-{\"message\": \"Hello from command line! 💻\"}
-{\"command\": \"say WebSocket API is working!\"}
-{\"command\": \"gamemode creative @a\"}
+# Test messages
+{"message": "Hello!"}
+{"command": "say WebSocket is working!"}
+{"getEffects": "PlayerName"}
 ```
 
 ## 🔒 Security
 
-### Authentication
-
-- **Optional Security:** Authentication can be disabled for trusted networks
-- **Standard Protocol:** Uses HTTP Basic Authentication during WebSocket handshake
-- **Audit Logging:** All authentication attempts logged for security monitoring
-
-### Permissions
-
-- **OP Level 4:** All commands executed with maximum server privileges
-- **Input Validation:** JSON parsing with comprehensive error handling
-- **Command Validation:** Commands validated through Minecraft's brigadier system
-
-### Network Security
-
-- **Local Binding:** Defaults to localhost for security
-- **Configurable Host:** Can bind to specific network interfaces as needed
-- **Connection Logging:** Source IP and authentication status logged
-- **Resource Protection:** Basic DoS protection through connection management
+- **Authentication:** Optional HTTP Basic Auth during WebSocket handshake
+- **Permissions:** All commands executed with OP level 4
+- **Local binding:** Defaults to localhost
+- **Audit logging:** Authentication attempts and commands logged
 
 ## 📊 Performance
 
-| Metric | Specification |
-|--------|---------------|
-| **Memory Usage** | ~15MB additional server memory |
-| **Concurrent Connections** | 10+ tested, scales with thread pool |
-| **Message Latency** | Sub-100ms processing time |
-| **TPS Impact** | Minimal server performance impact |
-| **Resource Cleanup** | Automatic connection and thread cleanup |
+| Metric | Value |
+|--------|-------|
+| Memory | ~15MB additional |
+| Connections | 10+ concurrent |
+| Latency | Sub-100ms |
+| TPS impact | Minimal |
 
 ## 🔧 Development
 
@@ -295,13 +271,9 @@ wscat -c ws://localhost:8765 -H \"Authorization: Basic $(echo -n 'user:pass' | b
 ### Building
 
 ```bash
-# Build all versions
-make build
-
-# Build specific version
-make build-1.21.1
-make build-1.21.11
-
+make build          # Build all versions
+make build-1.21.1   # Build for MC 1.21.1
+make build-1.21.11  # Build for MC 1.21.11
 # Output: versions/*/build/libs/minaret-*.jar
 ```
 
@@ -312,6 +284,8 @@ minaret/
 ├── src/main/java/com/minaret/
 │   ├── MinaretMod.java                  # Mod entry point, registries, lifecycle
 │   ├── WebSocketServer.java             # RFC 6455 WebSocket server
+│   ├── EventBroadcaster.java            # Server → client event broadcasting
+│   ├── MessageDispatcher.java           # Client → server message routing
 │   ├── SimpleJson.java                  # Flat JSON parser/generator
 │   ├── MinaretConfig.java               # NeoForge config
 │   ├── Compat.java                      # Cross-version reflection utilities
@@ -320,46 +294,33 @@ minaret/
 │   ├── ChunkLoaderBlock.java            # Chunk loader block
 │   ├── ChunkLoaderBlockEntity.java      # Chunk loader block entity
 │   ├── ChunkLoaderData.java             # Chunk loader persistence
-│   ├── WardingPostBlock.java            # Warding post block (mob repulsion, column notify)
-│   ├── WardingPostBlockEntity.java      # Warding post ticker (radius = 4 * column height)
+│   ├── WardingPostBlock.java            # Warding post block
+│   ├── WardingPostBlockEntity.java      # Warding post ticker
 │   ├── ChordConfig.java                 # Chord key config
+│   ├── MinaretCommands.java             # /minaret subcommands
 │   ├── *Effect.java / *Handler.java     # Mob effects and handlers
 │   └── client/
 │       └── ChordKeyHandler.java         # Chord key state machine
-├── src/main/resources/META-INF/
-│   └── neoforge.mods.toml              # Mod metadata
 ├── versions/
 │   ├── 1.21.1/                          # MC 1.21.1 subproject
 │   └── 1.21.11/                         # MC 1.21.11 subproject
-├── build.gradle                         # Multi-version build config
-└── README.md                            # This document
+└── build.gradle                         # Multi-version build config
 ```
 
 ## 🤝 Support
 
-### Common Issues
-
 **Connection Refused**
 - Verify mod is installed and server is running
 - Check `config/minaret-server.toml` for correct port
-- Ensure firewall allows WebSocket connections
 
-**Authentication Failures**  
+**Authentication Failures**
 - Verify credentials in config file
-- Check for typos in username/password
 - Review server logs for authentication errors
 
 **Commands Not Executing**
 - Ensure commands are valid Minecraft commands
 - Check server logs for permission errors
 - Verify JSON message format is correct
-
-### Getting Help
-
-- 📖 Read the [complete documentation](REQUIREMENTS.md)
-- 🐛 Report issues with detailed logs and steps to reproduce
-- 💡 Feature requests welcome with clear use cases
-- 🔧 Pull requests appreciated for improvements
 
 ## 📄 License
 
@@ -368,6 +329,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Use Cases
 
 - Remote server management via WebSocket (Discord bots, web panels, mobile apps)
+- React to game events in real time (player deaths, kills, food consumption)
 - Mob farm automation with spawner agitator stacks
 - Persistent chunk loading for farms, machines, and redstone
 - Streaming integration via streamer protect effect

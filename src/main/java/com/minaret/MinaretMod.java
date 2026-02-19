@@ -185,6 +185,10 @@ public class MinaretMod {
         return currentServer;
     }
 
+    public static WebSocketServer getWebSocketServer() {
+        return webSocketServer;
+    }
+
     public MinaretMod(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(
             ModConfig.Type.SERVER,
@@ -213,6 +217,11 @@ public class MinaretMod {
         );
         NeoForge.EVENT_BUS.addListener(HomingArcheryHandler::onArrowLoose);
         NeoForge.EVENT_BUS.addListener(HomingArcheryHandler::onLivingDamage);
+        NeoForge.EVENT_BUS.addListener(EventBroadcaster::onPlayerJoin);
+        NeoForge.EVENT_BUS.addListener(EventBroadcaster::onPlayerLeave);
+        NeoForge.EVENT_BUS.addListener(EventBroadcaster::onLivingDeath);
+        NeoForge.EVENT_BUS.addListener(EventBroadcaster::onItemUseFinish);
+        NeoForge.EVENT_BUS.addListener(EventBroadcaster::onLivingHeal);
 
         if (Compat.isClient()) {
             com.minaret.client.ChordKeyHandler.init(modEventBus);

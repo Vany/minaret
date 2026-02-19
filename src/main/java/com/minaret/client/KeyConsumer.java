@@ -28,7 +28,9 @@ public final class KeyConsumer {
     public static void consumeKey(int keyCode) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.options == null || CLICK_COUNT == null) return;
-        InputConstants.Key inputKey = InputConstants.Type.KEYSYM.getOrCreate(keyCode);
+        InputConstants.Key inputKey = InputConstants.Type.KEYSYM.getOrCreate(
+            keyCode
+        );
         for (KeyMapping km : mc.options.keyMappings) {
             if (km.isActiveAndMatches(inputKey)) {
                 try {
@@ -43,7 +45,9 @@ public final class KeyConsumer {
     public static void clickKeyMapping(KeyMapping target) {
         if (KEY_FIELD == null) return;
         try {
-            InputConstants.Key boundKey = (InputConstants.Key) KEY_FIELD.get(target);
+            InputConstants.Key boundKey = (InputConstants.Key) KEY_FIELD.get(
+                target
+            );
             KeyMapping.click(boundKey);
         } catch (Exception ignored) {}
     }

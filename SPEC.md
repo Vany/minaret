@@ -181,20 +181,20 @@ Three custom blocks with block entities, plus a persistence layer for chunk load
 
 ### Spawner Agitator (`spawner_agitator`)
 
-A block placed in a column above a vanilla mob spawner. Modifies the spawner's behavior:
-- Sets `requiredPlayerRange` to 32767 (effectively always active while server has players)
-- Accelerates `spawnDelay` proportional to the number of stacked agitators
-- Stacking: multiple agitators in a vertical column multiply the acceleration
+A block placed in a column below one or more vanilla mob spawners. Column layout: `[agitators...][spawners...]` — agitators at bottom, spawners on top. Modifies all spawners' behavior:
+- Sets `requiredPlayerRange` to -1 (always active) on each spawner
+- Reduces `minSpawnDelay` and `maxSpawnDelay` proportional to the number of stacked agitators (delays divided by agitator count)
+- Stacking agitators: more agitators = faster spawning on all spawners above
+- Stacking spawners: all contiguous spawners above the agitator column are agitated
 
-**Architecture — event-driven with minimal ticker:**
+**Architecture — event-driven, no ticker:**
 
 | Event | Action |
 |-------|--------|
-| `onPlace` (Block) | `bindSpawner()` — walk up from agitator to find spawner, cache `BaseSpawner` ref directly, set `requiredPlayerRange` to 32767, store original range. `notifyColumn()` — recalc stack size for topmost agitator. |
-| `playerWillDestroy` (Block) | `unbindSpawner()` — restore original `requiredPlayerRange`. `notifyColumnExcluding(self)` — recalc stack skipping the removed block. |
-| `onLoad` (BlockEntity) | Same as onPlace bind logic — resolves spawner on chunk load. |
-| `onNeighborChanged` (BlockEntity) | Re-checks spawner above. Called when a neighbor block changes. |
-| `serverTick` (static) | **Minimal ticker** — if `cachedSpawner != null` and `cachedStackSize > 1`: decrement `spawnDelay` by `(stackSize - 1)`. One field read + one field write via cached reflection. No world access, no block state checks. |
+| `onPlace` (Block) | `bindSpawner()` — walk up from topmost agitator, collect all contiguous spawners, cache `BaseSpawner` refs, set `requiredPlayerRange` to -1, apply delay scaling, store originals. `notifyColumn()` — recalc stack size for topmost agitator. |
+| `playerWillDestroy` (Block) | `unbindSpawner()` — restore all spawners' original values. `notifyColumnExcluding(self)` — recalc stack skipping the removed block. |
+| `onLoad` (BlockEntity) | Same as onPlace bind logic — resolves spawners on chunk load. |
+| `onNeighborChanged` (BlockEntity) | Re-checks spawners above. Called when a neighbor block changes. |
 
 **Reflection caching:**
 - `requiredPlayerRange` field: resolved by name in static init, fallback probes by value 16 on first real spawner encounter
@@ -202,12 +202,12 @@ A block placed in a column above a vanilla mob spawner. Modifies the spawner's b
 - Both `Field` objects cached in `static volatile` fields, resolved once
 
 **Key design decisions:**
-- `AGITATED_RANGE = 32767` (not -1) — ensures spawner stops naturally when all players disconnect during shutdown, preventing the `while(hasWork())` save loop hang
-- All cleanup in `playerWillDestroy()` (Block class), never in `setRemoved()` — world access in `setRemoved()` causes infinite loops during chunk unload (chunk reload → setRemoved → world access → chunk reload...)
-- `BaseSpawner` cached directly (not `SpawnerBlockEntity`) to avoid `getSpawner()` virtual call per tick
+- `AGITATED_RANGE = -1` — makes spawner always active (bypasses player range check)
+- All cleanup in `playerWillDestroy()` (Block class), never in `setRemoved()` — world access in `setRemoved()` causes infinite loops during chunk unload
+- Topmost agitator binds to all contiguous spawners above — stores parallel lists of originals per spawner
 - Stack recalc on remove uses `notifyColumnExcluding(removedPos)` to skip the block being removed (it's still in the world during `playerWillDestroy`)
 
-**NBT:** Persists `OriginalPlayerRange` (int) so the spawner can be restored after chunk reload.
+**NBT:** Persists `SpawnerCount` and indexed `OriginalRange_N`, `OriginalMinDelay_N`, `OriginalMaxDelay_N` ints so all spawners can be restored after chunk reload.
 
 **Known limitation:** Spawner placed *after* an agitator is only detected on chunk reload (`onLoad`), not immediately. The `neighborChanged` override cannot be used cross-version (1.21.11 changed the signature to use `Orientation` instead of `BlockPos`).
 
@@ -292,22 +292,67 @@ API compatibility: `/minaret exec` permission check uses reflection to handle `h
 8. **Separate chord config file** — `config/minaret-chords.json` instead of ModConfigSpec, because chord data is nested (map of sequence→target) and client-side only
 9. **Reflection-based key consumption** — `InputEvent.Key` is not cancelable in NeoForge. Keys are consumed by resetting `clickCount` to 0 and `setDown(false)` on matching KeyMappings via reflection, since `KeyMapping.click()` fires before the event
 10. **No world access in `setRemoved()`** — causes infinite loops during chunk unload. All cleanup moved to `playerWillDestroy()` on the Block class
-11. **`AGITATED_RANGE = 32767` not `-1`** — `-1` makes spawner always active (bypasses player range check), which prevents clean shutdown. `32767` is large enough to be effectively infinite but stops naturally when players disconnect
+11. **`AGITATED_RANGE = -1`** — makes spawner always active (bypasses player range check). Chunk is force-loaded while agitator is bound
 12. **Plain text file for ChunkLoaderData** — `SavedData`/`SavedDataType` API differs between 1.21.1 and 1.21.11; simple text file avoids the incompatibility
 13. **Atomic file save** — write to `.tmp` then `Files.move(ATOMIC_MOVE)` prevents corruption on crash mid-write
 14. **Event-driven spawner binding** — spawner discovery on place/load events, not per-tick polling. Ticker only does the delay acceleration (which genuinely needs per-tick work)
 
-## 8. Not Yet Implemented (from REQUIREMENTS.md)
+## 8. Event Broadcasting
 
-- Rate limiting (connections and messages)
-- TLS/SSL (WSS)
-- IP whitelisting
-- Event broadcasting (server events pushed to WS clients)
-- Player join/leave notifications
-- Batch commands
-- Message queuing
-- Plugin API for other mods
-- WebSocket compression (deflate)
-- Binary frame support
-- Advanced auth (JWT/OAuth)
-- Automated tests (no test sources exist)
+Server-side events are pushed to all connected WebSocket clients as JSON messages.
+Implemented in `EventBroadcaster.java`. Registered via `NeoForge.EVENT_BUS.addListener()` in `MinaretMod`.
+
+### Events
+
+#### `player_join`
+```json
+{"event":"player_join","player":"PlayerName"}
+```
+NeoForge: `PlayerEvent.PlayerLoggedInEvent`
+
+#### `player_leave`
+```json
+{"event":"player_leave","player":"PlayerName"}
+```
+NeoForge: `PlayerEvent.PlayerLoggedOutEvent`
+
+#### `player_death`
+```json
+{"event":"player_death","player":"PlayerName","cause":"fall"}
+```
+`cause` is `DamageSource.getMsgId()` (e.g. `fall`, `drown`, `mob`, `player`, `magic`).
+NeoForge: `LivingDeathEvent` where entity is `ServerPlayer`
+
+#### `player_kill`
+```json
+{"event":"player_kill","player":"PlayerName","mob":"zombie"}
+```
+`mob` is the short registry path of the killed entity type.
+NeoForge: `LivingDeathEvent` where `DamageSource.getEntity()` is a `Player`
+
+#### `player_eat`
+```json
+{"event":"player_eat","player":"PlayerName","item":"bread","nutrition":5,"saturation":6.0}
+```
+Only fires for items with `FoodProperties` (not potions, bows, etc.).
+NeoForge: `LivingEntityUseItemEvent.Finish` where entity is `ServerPlayer` and item is food.
+
+#### `player_heal`
+```json
+{"event":"player_heal","player":"PlayerName","amount":10.5}
+```
+Aggregated — fires when accumulated HP ≥ 10, or ≥ 1 minute since last broadcast (whichever comes first).
+Prevents spam from natural regen (~1 HP every 0.5s).
+NeoForge: `LivingHealEvent` where entity is `ServerPlayer`.
+
+## 9. Out of Scope
+
+- TLS/SSL (WSS) — local use only
+- IP whitelisting / firewall — local use only
+- Rate limiting — local use only
+- Advanced auth (JWT/OAuth) — Basic Auth sufficient
+- Message queuing — not needed
+- Plugin API for other mods — not needed
+- WebSocket compression (deflate) — not needed
+- Binary frame support — not needed
+- Automated tests — not planned

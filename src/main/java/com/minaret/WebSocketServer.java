@@ -58,6 +58,17 @@ public class WebSocketServer {
         );
     }
 
+    /** Sends a message to all connected clients. Called from server thread. */
+    public void broadcast(String message) {
+        connections.forEach(conn -> {
+            try {
+                conn.send(message);
+            } catch (IOException e) {
+                LOGGER.debug("Broadcast failed for connection: {}", e.getMessage());
+            }
+        });
+    }
+
     public void stop() {
         running = false;
         try {
