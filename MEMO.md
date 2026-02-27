@@ -375,6 +375,20 @@ minaret/
 - **Client Examples**: Node.js, Python, and CLI examples ✅
 - **Troubleshooting**: Common issues and solutions documented ✅
 
+## 🛠️ Dev Environment & Deploy
+
+- **Repo**: `/Users/vany/l/minaret`
+- **Test instance**: `/Users/vany/Library/Application Support/PrismLauncher/instances/1.21.11/mods/`
+- **Editor**: Zed with Claude Code plugin
+- **Deploy**: After `make build-1.21.11`, copy built jar to test instance mods folder
+- Always read `CLAUDE.md` at session start
+
+## 🔬 Cross-version API Notes
+
+- `DataComponents.FOOD` (not NeoForge's `getFoodProperties()`) works cross-version for food detection
+- `PlayerEvent.getEntity()` — use this, not `getPlayer()` in NeoForge 21.x
+- `WebSocketServer.broadcast(String)` — sends to all connected clients
+
 ## 🎯 Project Completion Status
 
 **Overall Progress**: ✅ **100% COMPLETE**

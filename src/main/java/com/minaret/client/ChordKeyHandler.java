@@ -6,6 +6,8 @@ import com.minaret.KeyMappingCompat;
 import com.minaret.MessageDispatcher;
 import com.minaret.MinaretMod;
 import com.mojang.blaze3d.platform.InputConstants;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.KeyMapping;
@@ -27,6 +29,7 @@ import net.neoforged.neoforge.common.NeoForge;
  */
 public class ChordKeyHandler {
 
+    private static final Logger LOGGER = LogManager.getLogger();
     private static final long TIMEOUT_MS = 1500;
 
     // ── Meta key ────────────────────────────────────────────────────────
@@ -66,7 +69,7 @@ public class ChordKeyHandler {
     private static void fireKeyTarget(String keyMappingName) {
         KeyMapping target = findKeyMapping(keyMappingName);
         if (target == null) {
-            MinaretMod.LOGGER.warn(
+            LOGGER.warn(
                 "Target KeyMapping '{}' not found",
                 keyMappingName
             );
@@ -78,18 +81,18 @@ public class ChordKeyHandler {
     private static void fireCmdTarget(String json) {
         var server = MinaretMod.getServer();
         if (server == null) {
-            MinaretMod.LOGGER.warn("Cannot execute chord command — no server");
+            LOGGER.warn("Cannot execute chord command — no server");
             return;
         }
         MessageDispatcher.dispatch(json, server, response ->
-            MinaretMod.LOGGER.debug("Chord command response: {}", response)
+            LOGGER.debug("Chord command response: {}", response)
         );
     }
 
     private static void fireChord(String sequence) {
         ChordTarget target = ChordConfig.get().getTarget(sequence);
         if (target == null) {
-            MinaretMod.LOGGER.warn("Chord '{}' has no target", sequence);
+            LOGGER.warn("Chord '{}' has no target", sequence);
         } else {
             switch (target) {
                 case ChordTarget.Key k -> fireKeyTarget(k.mappingName());
@@ -248,7 +251,7 @@ public class ChordKeyHandler {
         rebuildTrie();
         NeoForge.EVENT_BUS.addListener(ChordKeyHandler::onKeyInput);
         NeoForge.EVENT_BUS.addListener(ChordKeyHandler::onClientTick);
-        MinaretMod.LOGGER.debug(
+        LOGGER.debug(
             "Chord key handler initialized ({} chords)",
             ChordConfig.get().getChordSequences().size()
         );

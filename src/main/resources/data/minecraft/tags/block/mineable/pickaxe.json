@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "minaret:chunk_loader",
+    "minaret:spawner_agitator",
+    "minaret:warding_post",
+    "minaret:antiwither"
+  ]
+}

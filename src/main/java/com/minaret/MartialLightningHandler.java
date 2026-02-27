@@ -27,7 +27,7 @@ public class MartialLightningHandler {
 
     public static void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof Player player)) return;
-        if (!player.hasEffect(MinaretMod.MARTIAL_LIGHTNING)) return;
+        if (!player.hasEffect(MinaretRegistries.MARTIAL_LIGHTNING)) return;
         if (playersInAoeSwing.contains(player)) return;
 
         LivingEntity target = event.getEntity();

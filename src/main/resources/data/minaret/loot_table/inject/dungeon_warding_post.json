@@ -4,15 +4,10 @@
     {
       "rolls": 1,
       "entries": [
-        {
-          "type": "minecraft:item",
-          "name": "minaret:warding_post",
-          "weight": 3
-        },
-        {
-          "type": "minecraft:empty",
-          "weight": 17
-        }
+        {"type": "minecraft:item", "name": "minaret:warding_post",         "weight": 3},
+        {"type": "minecraft:item", "name": "minaret:repelling_post",        "weight": 3},
+        {"type": "minecraft:item", "name": "minaret:teleporter_inhibitor",  "weight": 3},
+        {"type": "minecraft:empty", "weight": 11}
       ]
     }
   ]

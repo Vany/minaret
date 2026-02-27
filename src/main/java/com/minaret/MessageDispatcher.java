@@ -6,7 +6,10 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -38,11 +41,13 @@ public final class MessageDispatcher {
                 handleCommand(json.get("command"), server, respond);
             } else if (json.containsKey("getEffects")) {
                 handleGetEffects(json.get("getEffects"), server, respond);
+            } else if (json.containsKey("use")) {
+                handleUse(json, server, respond);
             } else {
                 respondError(
                     respond,
                     null,
-                    "Unknown message type. Use 'message', 'command', or 'getEffects' fields."
+                    "Unknown message type. Use 'message', 'command', 'getEffects', or 'use' fields."
                 );
             }
         } catch (Exception e) {
@@ -196,6 +201,73 @@ public final class MessageDispatcher {
                         ? e.getMessage()
                         : "Failed to get effects"
                 );
+            }
+        });
+    }
+
+    /**
+     * Switches the player to the specified hotbar slot (0–8) and simulates a
+     * right-click use of the item in that slot. Runs on the server thread.
+     *
+     * JSON: {"use": "playerName", "slot": 3}
+     */
+    private static void handleUse(
+        Map<String, String> json,
+        MinecraftServer server,
+        Consumer<String> respond
+    ) {
+        String playerName = json.get("use");
+        String slotStr = json.get("slot");
+
+        if (slotStr == null) {
+            respondError(respond, "use", "Missing 'slot' field");
+            return;
+        }
+        int slot;
+        try {
+            slot = Integer.parseInt(slotStr);
+        } catch (NumberFormatException e) {
+            respondError(respond, "use", "Invalid slot: " + slotStr);
+            return;
+        }
+        if (slot < 0 || slot > 8) {
+            respondError(respond, "use", "Slot must be 0–8, got: " + slot);
+            return;
+        }
+
+        server.execute(() -> {
+            ServerPlayer player = server.getPlayerList().getPlayerByName(playerName);
+            if (player == null) {
+                respondError(respond, "use", "Player not found: " + playerName);
+                return;
+            }
+
+            Inventory inv = player.getInventory();
+            int prevSlot = Compat.getInventorySlot(inv);
+            Compat.setInventorySlot(inv, slot);
+
+            ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+            String itemId = stack.isEmpty() ? "air" : stack.getItem().getDescriptionId();
+
+            try {
+                player.gameMode.useItem(player, player.level(), stack, InteractionHand.MAIN_HAND);
+                respondSuccess(
+                    respond, "use",
+                    "player", playerName,
+                    "slot", String.valueOf(slot),
+                    "item", itemId
+                );
+                LOGGER.info("use: player={} slot={} item={}", playerName, slot, itemId);
+            } catch (Exception e) {
+                respondError(
+                    respond, "use",
+                    e.getMessage() != null ? e.getMessage() : "useItem failed",
+                    "player", playerName,
+                    "slot", String.valueOf(slot)
+                );
+                LOGGER.error("use failed: player={} slot={}", playerName, slot, e);
+            } finally {
+                Compat.setInventorySlot(inv, prevSlot);
             }
         });
     }

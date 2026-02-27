@@ -1,15 +1,18 @@
 package com.minaret.client;
 
-import com.minaret.MinaretMod;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Prefix trie for chord key sequences. Each path from root to a node with
  * a non-null {@code sequence} represents a complete chord.
  */
 public final class ChordTrie {
+
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public static final class Node {
         final Map<Integer, Node> children = new HashMap<>();
@@ -28,7 +31,7 @@ public final class ChordTrie {
             for (String part : parts) {
                 int keyCode = KeyNames.toKeyCode(part.trim());
                 if (keyCode < 0) {
-                    MinaretMod.LOGGER.warn(
+                    LOGGER.warn(
                         "Unknown key '{}' in chord '{}'", part.trim(), sequence
                     );
                     valid = false;

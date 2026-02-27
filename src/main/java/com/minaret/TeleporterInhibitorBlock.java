@@ -8,23 +8,23 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 
-/** Warding Post: contributes +6 to column radius. No push, no teleport inhibition. */
-public class WardingPostBlock extends WardingColumnBaseBlock {
+/** Teleporter Inhibitor: contributes +4 to column radius and enables teleport inhibition. */
+public class TeleporterInhibitorBlock extends WardingColumnBaseBlock {
 
-    private static final MapCodec<WardingPostBlock> CODEC = simpleCodec(WardingPostBlock::new);
+    private static final MapCodec<TeleporterInhibitorBlock> CODEC = simpleCodec(TeleporterInhibitorBlock::new);
 
     @Override
-    protected MapCodec<WardingPostBlock> codec() { return CODEC; }
+    protected MapCodec<TeleporterInhibitorBlock> codec() { return CODEC; }
 
-    public WardingPostBlock(BlockBehaviour.Properties props) { super(props); }
+    public TeleporterInhibitorBlock(BlockBehaviour.Properties props) { super(props); }
 
     @Override
     protected Supplier<BlockEntityType<? extends WardingColumnBlockEntity>> beTypeSupplier() {
-        return MinaretRegistries.WARDING_POST_BE::get;
+        return MinaretRegistries.TELEPORTER_INHIBITOR_BE::get;
     }
 
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new WardingPostBlockEntity(pos, state);
+        return new TeleporterInhibitorBlockEntity(pos, state);
     }
 }

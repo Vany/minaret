@@ -53,7 +53,7 @@ public class EventBroadcaster {
         if (ws == null) return;
         String player = event.getEntity().getName().getString();
         ws.broadcast(
-            "{\"event\":\"player_join\",\"player\":\"" + escape(player) + "\"}"
+            "{\"event\":\"player_join\",\"player\":\"" + SimpleJson.escapeString(player) + "\"}"
         );
     }
 
@@ -64,7 +64,7 @@ public class EventBroadcaster {
         if (ws == null) return;
         String player = event.getEntity().getName().getString();
         ws.broadcast(
-            "{\"event\":\"player_leave\",\"player\":\"" + escape(player) + "\"}"
+            "{\"event\":\"player_leave\",\"player\":\"" + SimpleJson.escapeString(player) + "\"}"
         );
     }
 
@@ -80,8 +80,8 @@ public class EventBroadcaster {
             String cause = event.getSource().getMsgId();
             ws.broadcast(
                 "{\"event\":\"player_death\"" +
-                ",\"player\":\"" + escape(name) + "\"" +
-                ",\"cause\":\"" + escape(cause) + "\"}"
+                ",\"player\":\"" + SimpleJson.escapeString(name) + "\"" +
+                ",\"cause\":\"" + SimpleJson.escapeString(cause) + "\"}"
             );
             return;
         }
@@ -94,8 +94,8 @@ public class EventBroadcaster {
             String mobType = event.getEntity().getType().toShortString();
             ws.broadcast(
                 "{\"event\":\"player_kill\"" +
-                ",\"player\":\"" + escape(killerName) + "\"" +
-                ",\"mob\":\"" + escape(mobType) + "\"}"
+                ",\"player\":\"" + SimpleJson.escapeString(killerName) + "\"" +
+                ",\"mob\":\"" + SimpleJson.escapeString(mobType) + "\"}"
             );
         }
     }
@@ -120,8 +120,8 @@ public class EventBroadcaster {
 
         ws.broadcast(
             "{\"event\":\"player_eat\"" +
-            ",\"player\":\"" + escape(playerName) + "\"" +
-            ",\"item\":\"" + escape(itemShort) + "\"" +
+            ",\"player\":\"" + SimpleJson.escapeString(playerName) + "\"" +
+            ",\"item\":\"" + SimpleJson.escapeString(itemShort) + "\"" +
             ",\"nutrition\":" + nutrition +
             ",\"saturation\":" + saturation + "}"
         );
@@ -149,7 +149,7 @@ public class EventBroadcaster {
         if (thresholdReached || timedOut) {
             ws.broadcast(
                 "{\"event\":\"player_heal\"" +
-                ",\"player\":\"" + escape(name) + "\"" +
+                ",\"player\":\"" + SimpleJson.escapeString(name) + "\"" +
                 ",\"amount\":" + String.format("%.1f", accum.total()) + "}"
             );
             healAccum.put(uuid, accum.reset());
@@ -158,10 +158,4 @@ public class EventBroadcaster {
         }
     }
 
-    // ── Utility ──────────────────────────────────────────────────────────
-
-    /** Minimal JSON string escaping — backslash and double-quote only. */
-    private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 }

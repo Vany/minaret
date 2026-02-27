@@ -8,6 +8,8 @@ import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class SpawnerAgitatorBlock extends BaseEntityBlock {
@@ -33,6 +35,13 @@ public class SpawnerAgitatorBlock extends BaseEntityBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new SpawnerAgitatorBlockEntity(pos, state);
+    }
+
+    @Override
+    public void randomTick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
+        if (level.getBlockEntity(pos) instanceof SpawnerAgitatorBlockEntity be) {
+            be.recheckSpawners();
+        }
     }
 
     // ── Events ──────────────────────────────────────────────────────────
@@ -96,7 +105,6 @@ public class SpawnerAgitatorBlock extends BaseEntityBlock {
         // The removed block already called unbindSpawner in playerWillDestroy
         ColumnHelper.forEachInColumnExcluding(
             level,
-            removed,
             removed,
             SpawnerAgitatorBlock.class,
             SpawnerAgitatorBlockEntity.class,

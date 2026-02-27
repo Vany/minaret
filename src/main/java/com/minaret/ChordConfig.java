@@ -3,6 +3,8 @@ package com.minaret;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import java.util.*;
 
 /**
@@ -17,6 +19,8 @@ import java.util.*;
  *   "f>2" = "cmd:{\"command\":\"time set day\"}"
  */
 public class ChordConfig {
+
+    private static final Logger LOGGER = LogManager.getLogger();
 
     private static final Path CONFIG_PATH = Path.of(
         "config",
@@ -119,13 +123,13 @@ public class ChordConfig {
                 }
             }
 
-            MinaretMod.LOGGER.debug(
+            LOGGER.debug(
                 "Loaded {} chord keys (meta: {})",
                 chords.size(),
                 metaKey
             );
         } catch (Exception e) {
-            MinaretMod.LOGGER.error("Failed to load chord config", e);
+            LOGGER.error("Failed to load chord config", e);
         }
     }
 
@@ -145,7 +149,7 @@ public class ChordConfig {
             }
             Files.writeString(CONFIG_PATH, sb.toString());
         } catch (IOException e) {
-            MinaretMod.LOGGER.error("Failed to save chord config", e);
+            LOGGER.error("Failed to save chord config", e);
         }
     }
 
@@ -211,12 +215,12 @@ public class ChordConfig {
             }
 
             save();
-            MinaretMod.LOGGER.info(
+            LOGGER.info(
                 "Migrated {} chord keys from JSON to TOML",
                 chords.size()
             );
         } catch (Exception e) {
-            MinaretMod.LOGGER.error(
+            LOGGER.error(
                 "Failed to migrate chord config from JSON",
                 e
             );

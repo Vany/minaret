@@ -37,7 +37,7 @@ public class HomingArcheryHandler {
 
     public static void onArrowLoose(ArrowLooseEvent event) {
         Player player = event.getEntity();
-        if (!player.hasEffect(MinaretMod.HOMING_ARCHERY)) return;
+        if (!player.hasEffect(MinaretRegistries.HOMING_ARCHERY)) return;
         if (!(player.level() instanceof ServerLevel serverLevel)) return;
 
         float power = BowItem.getPowerForTime(event.getCharge());

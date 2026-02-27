@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " I ",
+    "IOI",
+    " I "
+  ],
+  "key": {
+    "I": "minecraft:iron_bars",
+    "O": "minecraft:obsidian"
+  },
+  "result": {
+    "id": "minaret:antiwither",
+    "count": 1
+  }
+}

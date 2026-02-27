@@ -1,5 +1,15 @@
 # SPEC.md - Minaret Mod Specification
 
+## TODO
+
+- [ ] area spawn rate incrementer like warding post.
+- [x] ederman teleportion inhibitor
+- [ ] backpack collector
+- [ ] mob damager
+- [ ] change agitator to randomly recheck configuration
+
+
+
 ## Overview
 
 Minaret is a NeoForge mod (server + client) with three subsystems:
@@ -260,6 +270,26 @@ Each post caches `cachedColumnHeight` (count of posts at or below it) and `isTop
 - `WardingPostBlock` extends `BaseEntityBlock` with custom `VoxelShape`, `onPlace`/`playerWillDestroy` for column notification
 - `WardingPostBlockEntity` has server ticker (topmost only), column height caching, no NBT persistence needed
 - Found as dungeon loot (jungle temples, desert pyramids, strongholds, mineshafts, simple dungeons)
+
+### Teleporter Inhibitor (`teleporter_inhibitor`)
+
+Prevents mobs (and entities) from teleporting when within the column's inhibit radius. Participates in the same mixed warding column as the Warding Post (both implement `WardingColumnBlock`).
+
+**Radius formula:** `inhibitRadius = 4 * (wardingPostCount + inhibitorCount)` in the column.
+
+**Two modes:**
+- **Standalone inhibitor column** (no warding posts): inhibits teleports only. Top `TeleporterInhibitorBlockEntity` owns the radius.
+- **Mixed column with warding posts**: the warding posts handle mob repulsion at `4 * postCount`; teleport inhibition covers `4 * (postCount + inhibitorCount)`. Top `WardingPostBlockEntity` owns both radii.
+
+**Event:** `EntityTeleportEvent` at `LOWEST` priority. Skips `TeleportCommand` and `SpreadPlayersCommand` (player-issued `/tp` and `/spreadplayers`).
+
+**Architecture:**
+- `WardingColumnBlock` — marker interface implemented by both `WardingPostBlock` and `TeleporterInhibitorBlock`
+- `ColumnHelper` — extended with interface-based mixed-column traversal (`forEachInMixedColumn`, `countInMixedColumn`, `isTopOfMixedColumn`)
+- `TeleporterInhibitorBlock` — same shape/hardness as warding post, no ticker
+- `TeleporterInhibitorBlockEntity` — stores `cachedInhibitorCount`, `cachedPostCount`, `isTopOfColumn`; `teleportInhibitRadius()` computes the effective radius
+- `WardingPostBlockEntity` — gains `cachedInhibitorCount` field; `teleportInhibitRadius()` covers both types
+- `WardingPostTeleportHandler` — scans `WardingColumnBlock` blocks in range; reads radius from top-of-column BE (either type)
 
 ### Compat (reflection utilities)
 

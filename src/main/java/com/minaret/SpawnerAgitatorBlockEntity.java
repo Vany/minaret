@@ -27,15 +27,15 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
     private static final String TAG_ORIGINAL_MIN_DELAY = "OriginalMinDelay_";
     private static final String TAG_ORIGINAL_MAX_DELAY = "OriginalMaxDelay_";
 
-    // Multiple spawners bound by the topmost agitator
+    /** Original spawner values saved on first bind, restored on unbind. */
+    private record SpawnerState(int range, int minDelay, int maxDelay) {}
+
     private final List<BaseSpawner> cachedSpawners = new ArrayList<>();
-    private final List<Integer> originalRanges = new ArrayList<>();
-    private final List<Integer> originalMinDelays = new ArrayList<>();
-    private final List<Integer> originalMaxDelays = new ArrayList<>();
+    private final List<SpawnerState> originalStates = new ArrayList<>();
     private int cachedStackSize = 1;
 
     public SpawnerAgitatorBlockEntity(BlockPos pos, BlockState state) {
-        super(MinaretMod.SPAWNER_AGITATOR_BE.get(), pos, state);
+        super(MinaretRegistries.SPAWNER_AGITATOR_BE.get(), pos, state);
     }
 
     // ── Event-driven spawner binding ────────────────────────────────────
@@ -49,10 +49,7 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         BlockPos above = worldPosition.above();
         if (exclude != null && above.equals(exclude)) above = above.above();
         // Only the topmost agitator should bind
-        if (
-            level.getBlockState(above).getBlock() instanceof
-                SpawnerAgitatorBlock
-        ) {
+        if (level.getBlockState(above).getBlock() instanceof SpawnerAgitatorBlock) {
             cachedSpawners.clear();
             return;
         }
@@ -66,10 +63,7 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
                 continue;
             }
             if (!level.getBlockState(check).is(Blocks.SPAWNER)) break;
-            if (
-                !(level.getBlockEntity(check) instanceof
-                        SpawnerBlockEntity spawnerBE)
-            ) break;
+            if (!(level.getBlockEntity(check) instanceof SpawnerBlockEntity spawnerBE)) break;
             BaseSpawner spawner = spawnerBE.getSpawner();
             SpawnerAccessor.ensureResolved(spawner);
             if (!SpawnerAccessor.isAvailable()) return;
@@ -82,12 +76,14 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         cachedSpawners.clear();
         cachedSpawners.addAll(foundSpawners);
 
-        // Save originals on first bind (list empty means first time)
-        if (originalRanges.isEmpty()) {
+        // Save originals on first bind (empty means first time)
+        if (originalStates.isEmpty()) {
             for (BaseSpawner spawner : cachedSpawners) {
-                originalRanges.add(SpawnerAccessor.getRange(spawner));
-                originalMinDelays.add(SpawnerAccessor.getMinDelay(spawner));
-                originalMaxDelays.add(SpawnerAccessor.getMaxDelay(spawner));
+                originalStates.add(new SpawnerState(
+                    SpawnerAccessor.getRange(spawner),
+                    SpawnerAccessor.getMinDelay(spawner),
+                    SpawnerAccessor.getMaxDelay(spawner)
+                ));
             }
             persistOriginals();
         }
@@ -106,36 +102,23 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         }
         LOGGER.info(
             "Agitator bind at {} — stack={}, spawners={}, originals={}",
-            worldPosition,
-            cachedStackSize,
-            cachedSpawners.size(),
-            originalRanges
+            worldPosition, cachedStackSize, cachedSpawners.size(), originalStates
         );
     }
 
     void unbindSpawner() {
         if (!cachedSpawners.isEmpty() && SpawnerAccessor.isAvailable()) {
-            int count = Math.min(cachedSpawners.size(), originalRanges.size());
+            int count = Math.min(cachedSpawners.size(), originalStates.size());
             for (int i = 0; i < count; i++) {
                 BaseSpawner spawner = cachedSpawners.get(i);
-                int range = originalRanges.get(i);
-                int minDelay = originalMinDelays.get(i);
-                int maxDelay = originalMaxDelays.get(i);
-                if (range >= 0) SpawnerAccessor.setRange(spawner, range);
-                if (minDelay >= 0) SpawnerAccessor.setMinDelay(
-                    spawner,
-                    minDelay
-                );
-                if (maxDelay >= 0) SpawnerAccessor.setMaxDelay(
-                    spawner,
-                    maxDelay
-                );
+                SpawnerState state = originalStates.get(i);
+                if (state.range >= 0) SpawnerAccessor.setRange(spawner, state.range);
+                if (state.minDelay >= 0) SpawnerAccessor.setMinDelay(spawner, state.minDelay);
+                if (state.maxDelay >= 0) SpawnerAccessor.setMaxDelay(spawner, state.maxDelay);
             }
             LOGGER.info(
-                "Agitator unbind at {} — restored {} spawners, ranges={}",
-                worldPosition,
-                count,
-                originalRanges
+                "Agitator unbind at {} — restored {} spawners, originals={}",
+                worldPosition, count, originalStates
             );
         }
         // Unforce chunk
@@ -144,9 +127,7 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         }
         BOUND_AGITATORS.remove(this);
         cachedSpawners.clear();
-        originalRanges.clear();
-        originalMinDelays.clear();
-        originalMaxDelays.clear();
+        originalStates.clear();
         if (level != null && !level.isClientSide()) {
             persistOriginals();
         }
@@ -154,19 +135,35 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
 
     private void applyDelays(BaseSpawner spawner, int index) {
         int n = Math.max(1, cachedStackSize);
-        if (index < originalMinDelays.size()) {
-            int minDelay = originalMinDelays.get(index);
-            if (minDelay > 0) SpawnerAccessor.setMinDelay(
-                spawner,
-                Math.max(1, minDelay / n)
-            );
+        if (index < originalStates.size()) {
+            SpawnerState state = originalStates.get(index);
+            if (state.minDelay > 0) SpawnerAccessor.setMinDelay(spawner, Math.max(1, state.minDelay / n));
+            if (state.maxDelay > 0) SpawnerAccessor.setMaxDelay(spawner, Math.max(1, state.maxDelay / n));
         }
-        if (index < originalMaxDelays.size()) {
-            int maxDelay = originalMaxDelays.get(index);
-            if (maxDelay > 0) SpawnerAccessor.setMaxDelay(
-                spawner,
-                Math.max(1, maxDelay / n)
-            );
+    }
+
+    /**
+     * Periodic integrity recheck (called on random tick). Counts contiguous spawners
+     * above and recalculates stack size. Only unbinds+rebinds if the spawner count
+     * changed, so unnecessary NBT writes are avoided.
+     */
+    void recheckSpawners() {
+        if (level == null || level.isClientSide()) return;
+        // Only the topmost agitator in the column should act
+        if (level.getBlockState(worldPosition.above()).getBlock() instanceof SpawnerAgitatorBlock) return;
+
+        recalcStackSize();
+
+        int currentCount = 0;
+        BlockPos check = worldPosition.above();
+        while (level.getBlockState(check).is(Blocks.SPAWNER)) {
+            currentCount++;
+            check = check.above();
+        }
+
+        if (currentCount != cachedSpawners.size()) {
+            if (!cachedSpawners.isEmpty()) unbindSpawner();
+            if (currentCount > 0) bindSpawner();
         }
     }
 
@@ -183,10 +180,7 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
     void onNeighborChanged() {
         if (level == null || level.isClientSide()) return;
         BlockPos above = worldPosition.above();
-        if (
-            level.getBlockState(above).getBlock() instanceof
-                SpawnerAgitatorBlock
-        ) {
+        if (level.getBlockState(above).getBlock() instanceof SpawnerAgitatorBlock) {
             if (!cachedSpawners.isEmpty()) unbindSpawner();
             return;
         }
@@ -207,11 +201,7 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
     void recalcStackSize(BlockPos exclude) {
         if (level == null) return;
         cachedStackSize = ColumnHelper.countBelow(
-            level,
-            worldPosition,
-            exclude,
-            SpawnerAgitatorBlock.class,
-            false
+            level, worldPosition, exclude, SpawnerAgitatorBlock.class, false
         );
     }
 
@@ -223,19 +213,13 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
         CompoundTag data = getPersistentData();
         if (data.contains(TAG_SPAWNER_COUNT)) {
             int count = Compat.getTagInt(data, TAG_SPAWNER_COUNT);
-            originalRanges.clear();
-            originalMinDelays.clear();
-            originalMaxDelays.clear();
+            originalStates.clear();
             for (int i = 0; i < count; i++) {
-                originalRanges.add(
-                    Compat.getTagInt(data, TAG_ORIGINAL_RANGE + i)
-                );
-                originalMinDelays.add(
-                    Compat.getTagInt(data, TAG_ORIGINAL_MIN_DELAY + i)
-                );
-                originalMaxDelays.add(
+                originalStates.add(new SpawnerState(
+                    Compat.getTagInt(data, TAG_ORIGINAL_RANGE + i),
+                    Compat.getTagInt(data, TAG_ORIGINAL_MIN_DELAY + i),
                     Compat.getTagInt(data, TAG_ORIGINAL_MAX_DELAY + i)
-                );
+                ));
             }
         }
         recalcStackSize();
@@ -256,18 +240,13 @@ public class SpawnerAgitatorBlockEntity extends BlockEntity {
             }
             data.remove(TAG_SPAWNER_COUNT);
         }
-        if (!originalRanges.isEmpty()) {
-            data.putInt(TAG_SPAWNER_COUNT, originalRanges.size());
-            for (int i = 0; i < originalRanges.size(); i++) {
-                data.putInt(TAG_ORIGINAL_RANGE + i, originalRanges.get(i));
-                data.putInt(
-                    TAG_ORIGINAL_MIN_DELAY + i,
-                    originalMinDelays.get(i)
-                );
-                data.putInt(
-                    TAG_ORIGINAL_MAX_DELAY + i,
-                    originalMaxDelays.get(i)
-                );
+        if (!originalStates.isEmpty()) {
+            data.putInt(TAG_SPAWNER_COUNT, originalStates.size());
+            for (int i = 0; i < originalStates.size(); i++) {
+                SpawnerState state = originalStates.get(i);
+                data.putInt(TAG_ORIGINAL_RANGE + i, state.range);
+                data.putInt(TAG_ORIGINAL_MIN_DELAY + i, state.minDelay);
+                data.putInt(TAG_ORIGINAL_MAX_DELAY + i, state.maxDelay);
             }
         }
         setChanged();
