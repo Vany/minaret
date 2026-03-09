@@ -393,7 +393,7 @@ Build: `make build-1.21.11`. Deploy: copy `versions/1.21.11/build/libs/minaret-1
 1. **No external dependencies** — avoids jar bundling complexity; custom WebSocket + JSON
 2. **Flat JSON only** — `SimpleJson` handles `Map<String,String>` which covers the protocol; `getEffects` array is hand-built as a one-off
 3. **OP4 for all commands** — simplifies authorization; external auth layer is the access gate
-4. **CachedThreadPool** — unbounded thread pool; acceptable given expected low connection count (<10)
+4. **Virtual threads** — `Executors.newVirtualThreadPerTaskExecutor()` (Java 21). Each connection blocks cheaply; no platform thread held per idle connection. Zero code changes beyond the executor line.
 5. **No continuation frames** — single-frame messages only; sufficient for JSON payloads under 64KB
 6. **Reflection for API access** — `hasPermission` removed in 1.21.11 (use reflection fallback); `FMLEnvironment.dist`/`getDist()` for client detection; `KeyMapping` constructor takes `Category` record in 1.21.11
 7. **Direct KeyMapping firing for chords** — chords map directly to KeyMapping names (e.g. `key:sophisticatedbackpacks.openbackpack`) or WebSocket commands (`cmd:{...}`). No phantom/virtual keycodes needed. `KeyMapping.click(boundKey)` fires the target action directly.
@@ -409,6 +409,10 @@ Build: `make build-1.21.11`. Deploy: copy `versions/1.21.11/build/libs/minaret-1
 17. **Splash/lingering Mega Chanter potions allowed** — no brewing lock-out; vanilla brewing chain naturally produces them. Intentionally left as-is.
 18. **`affectNeighborsAfterRemoval` replaces `onRemove` in 1.21.11** — `BlockBehaviour.onRemove(BlockState, Level, BlockPos, BlockState, boolean)` does not exist in 1.21.11. Use `affectNeighborsAfterRemoval(BlockState, ServerLevel, BlockPos, boolean)` instead. Key difference: block at pos is already removed when this fires. Call `notifyColumn(pos)` (finds lower fragment) AND `notifyColumn(pos.above())` (finds upper fragment if column was split). `playerWillDestroy` still handles player removal while block is still in world.
 19. **`on_mob_spawn_equipment` tag for mob enchantments** — pure JSON, no Java code; much simpler than a custom `IGlobalLootModifier`. Mobs that spawn with equipment have a chance to have these enchantments on their gear.
+20. **`MessageDispatcher` handler registry** — `LinkedHashMap<String, Handler>` keyed by JSON discriminant field. Adding a new message type is one `HANDLERS.put()` line; `dispatch()` is not touched. Ordered map preserves priority (first matching key wins).
+21. **In-place frame accumulation buffer** — single `byte[MAX_ACCUMULATOR]` per `Connection`, reused across reads. Consumed bytes are shifted left in-place. Avoids per-read array allocation; for typical single-frame reads `remaining == 0` and no copy occurs.
+22. **`Compat.isClient()` cached at class load** — environment is fixed for the JVM lifetime; result stored in `static final boolean IS_CLIENT`. The reflection runs exactly once.
+23. **`ChordConfig` observer pattern** — `setOnChanged(Runnable)` wired to `ChordKeyHandler::rebuildTrie` in `init()`. All mutations (`addChord`, `removeChord`, `setMetaKey`) call `notifyChanged()` after `save()`. Callers (e.g. `MinaretCommands`) no longer need to manually trigger trie rebuilds — the coupling is internal to the config.
 
 ## 9. Event Broadcasting
 

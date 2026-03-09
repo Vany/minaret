@@ -249,6 +249,7 @@ public class ChordKeyHandler {
     public static void init(IEventBus modEventBus) {
         ChordConfig.get().load();
         rebuildTrie();
+        ChordConfig.get().setOnChanged(ChordKeyHandler::rebuildTrie);
         NeoForge.EVENT_BUS.addListener(ChordKeyHandler::onKeyInput);
         NeoForge.EVENT_BUS.addListener(ChordKeyHandler::onClientTick);
         LOGGER.debug(

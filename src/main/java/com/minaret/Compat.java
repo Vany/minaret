@@ -56,7 +56,11 @@ public final class Compat {
 
     // ── Environment ─────────────────────────────────────────────────────
 
-    public static boolean isClient() {
+    private static final boolean IS_CLIENT = resolveIsClient();
+
+    public static boolean isClient() { return IS_CLIENT; }
+
+    private static boolean resolveIsClient() {
         try {
             Class<?> fmlEnv = Class.forName("net.neoforged.fml.loading.FMLEnvironment");
             Object dist;

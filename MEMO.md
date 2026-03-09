@@ -169,6 +169,11 @@ auth_password = ""
 - **No External Dependencies**: Eliminates jar bundling complexity and version conflicts
 - **Manual WebSocket**: Full control over protocol implementation and security
 - **Custom JSON**: Minimal overhead for simple message structure
+- **Virtual threads**: `Executors.newVirtualThreadPerTaskExecutor()` — each connection blocks cheaply, no platform thread per idle client
+- **In-place frame buffer**: Single `byte[MAX_ACCUMULATOR]` per connection, shifted left on consume — zero allocation per received message in the common case
+- **`MessageDispatcher` handler registry**: `LinkedHashMap<String, Handler>` — new message types added with one `HANDLERS.put()` line, `dispatch()` untouched
+- **`ChordConfig` observer pattern**: `setOnChanged(Runnable)` → `ChordKeyHandler::rebuildTrie` wired at init; mutations auto-notify, callers need no awareness of the trie
+- **`Compat.isClient()` cached**: Result stored in `static final boolean IS_CLIENT` — reflection runs once at class load
 - **Thread Separation**: WebSocket I/O separate from Minecraft server thread
 - **OP Permissions**: Ensures all commands can be executed without permission issues
 - **Event-driven block entities**: Spawner binding on place/load events, not per-tick polling

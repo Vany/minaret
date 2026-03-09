@@ -21,9 +21,10 @@ Minaret is a multi-feature NeoForge mod for Minecraft 1.21.1 / 1.21.11:
 **WebSocket API**
 - RFC 6455 compliant WebSocket server, zero external dependencies
 - Optional HTTP Basic Authentication
-- Chat broadcast, command execution, effect queries via JSON
+- Chat broadcast, command execution, effect queries, item use — via JSON
 - Server pushes game events to all connected clients
-- Sub-100ms latency, thread-safe
+- Java 21 virtual threads — no platform thread blocked per connection
+- Zero-allocation frame buffer — single pre-allocated byte[] per connection
 
 **Spawner Agitator**
 - Place below a mob spawner to increase its range and speed
@@ -141,6 +142,18 @@ All messages use JSON with UTF-8 encoding.
 {"status":"success","type":"getEffects","player":"PlayerName","effects":[...]}
 ```
 
+#### Use item in hotbar slot
+```json
+{"use": "PlayerName", "slot": 3}
+```
+
+Switches the player's selected slot to `slot` (0–8), triggers a right-click use, then restores the previous slot.
+
+**Response:**
+```json
+{"status":"success","type":"use","player":"PlayerName","slot":"3","item":"minecraft.item.bread"}
+```
+
 ### Server → Client (events)
 
 The server pushes these events to all connected clients automatically:
@@ -169,8 +182,10 @@ Examples:
 |-------|-------------|
 | `401 Unauthorized` | Invalid/missing authentication |
 | `Invalid JSON` | Malformed JSON message |
-| `Unknown message type` | Missing `message`, `command`, or `getEffects` field |
+| `Unknown message type` | No recognized field (`message`, `command`, `getEffects`, `use`) |
 | `Command failed` | Command returned error code 0 |
+| `Player not found` | Named player is not online |
+| `Slot must be 0–8` | Invalid slot for `use` action |
 
 ## 🛠️ Examples
 
@@ -255,7 +270,8 @@ wscat -c ws://localhost:8765 -H "Authorization: Basic $(echo -n 'user:pass' | ba
 | Metric | Value |
 |--------|-------|
 | Memory | ~15MB additional |
-| Connections | 10+ concurrent |
+| Connections | Unbounded (Java 21 virtual threads — no platform thread per connection) |
+| Frame buffer | Pre-allocated per connection — zero allocation per received message |
 | Latency | Sub-100ms |
 | TPS impact | Minimal |
 

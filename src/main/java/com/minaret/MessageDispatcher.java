@@ -23,6 +23,20 @@ public final class MessageDispatcher {
     private static final String COLOR_GRAY = "\u00a77";
     private static final String COLOR_WHITE = "\u00a7f";
 
+    @FunctionalInterface
+    private interface Handler {
+        void handle(Map<String, String> json, MinecraftServer server, Consumer<String> respond);
+    }
+
+    /** Ordered map: first key present in the incoming JSON wins. */
+    private static final Map<String, Handler> HANDLERS = new LinkedHashMap<>();
+    static {
+        HANDLERS.put("message",    MessageDispatcher::handleChat);
+        HANDLERS.put("command",    (json, server, respond) -> handleCommand(json.get("command"), server, respond));
+        HANDLERS.put("getEffects", (json, server, respond) -> handleGetEffects(json.get("getEffects"), server, respond));
+        HANDLERS.put("use",        MessageDispatcher::handleUse);
+    }
+
     private MessageDispatcher() {}
 
     /** Dispatch a JSON message string to the appropriate handler. */
@@ -35,21 +49,17 @@ public final class MessageDispatcher {
             LOGGER.debug("Processing message: {}", message);
             Map<String, String> json = SimpleJson.parseFlat(message);
 
-            if (json.containsKey("message")) {
-                handleChat(json, server, respond);
-            } else if (json.containsKey("command")) {
-                handleCommand(json.get("command"), server, respond);
-            } else if (json.containsKey("getEffects")) {
-                handleGetEffects(json.get("getEffects"), server, respond);
-            } else if (json.containsKey("use")) {
-                handleUse(json, server, respond);
-            } else {
-                respondError(
-                    respond,
-                    null,
-                    "Unknown message type. Use 'message', 'command', 'getEffects', or 'use' fields."
-                );
+            for (var entry : HANDLERS.entrySet()) {
+                if (json.containsKey(entry.getKey())) {
+                    entry.getValue().handle(json, server, respond);
+                    return;
+                }
             }
+            respondError(
+                respond,
+                null,
+                "Unknown message type. Use 'message', 'command', 'getEffects', or 'use' fields."
+            );
         } catch (Exception e) {
             LOGGER.error("Error processing message: {}", message, e);
             respondError(respond, null, "Invalid JSON or processing error");

@@ -46,6 +46,14 @@ public class EventBroadcaster {
         }
     }
 
+    // ── Broadcast helper ─────────────────────────────────────────────────
+
+    /** Send a JSON string to all connected clients. No-op if server not running. */
+    private static void broadcast(String json) {
+        WebSocketServer ws = MinaretMod.getWebSocketServer();
+        if (ws != null) ws.broadcast(json);
+    }
+
     // ── JSON helper ──────────────────────────────────────────────────────
 
     /** Build an event JSON string with "event" first, then additional key-value pairs. */
@@ -59,28 +67,21 @@ public class EventBroadcaster {
     // ── Player join ──────────────────────────────────────────────────────
 
     public static void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
-        WebSocketServer ws = MinaretMod.getWebSocketServer();
-        if (ws == null) return;
-        ws.broadcast(event("player_join", "player", event.getEntity().getName().getString()));
+        broadcast(event("player_join", "player", event.getEntity().getName().getString()));
     }
 
     // ── Player leave ─────────────────────────────────────────────────────
 
     public static void onPlayerLeave(PlayerEvent.PlayerLoggedOutEvent event) {
-        WebSocketServer ws = MinaretMod.getWebSocketServer();
-        if (ws == null) return;
-        ws.broadcast(event("player_leave", "player", event.getEntity().getName().getString()));
+        broadcast(event("player_leave", "player", event.getEntity().getName().getString()));
     }
 
     // ── Death ────────────────────────────────────────────────────────────
 
     public static void onLivingDeath(LivingDeathEvent event) {
-        WebSocketServer ws = MinaretMod.getWebSocketServer();
-        if (ws == null) return;
-
         // player died
         if (event.getEntity() instanceof ServerPlayer player) {
-            ws.broadcast(event("player_death",
+            broadcast(event("player_death",
                 "player", player.getName().getString(),
                 "cause",  event.getSource().getMsgId()
             ));
@@ -89,7 +90,7 @@ public class EventBroadcaster {
 
         // player killed a mob
         if (event.getSource().getEntity() instanceof ServerPlayer killer) {
-            ws.broadcast(event("player_kill",
+            broadcast(event("player_kill",
                 "player", killer.getName().getString(),
                 "mob",    event.getEntity().getType().toShortString()
             ));
@@ -99,8 +100,6 @@ public class EventBroadcaster {
     // ── Player ate food ──────────────────────────────────────────────────
 
     public static void onItemUseFinish(LivingEntityUseItemEvent.Finish event) {
-        WebSocketServer ws = MinaretMod.getWebSocketServer();
-        if (ws == null) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         FoodProperties food = event.getItem().get(DataComponents.FOOD);
@@ -110,7 +109,7 @@ public class EventBroadcaster {
         int dot = item.lastIndexOf('.');
         String itemShort = dot >= 0 ? item.substring(dot + 1) : item;
 
-        ws.broadcast(event("player_eat",
+        broadcast(event("player_eat",
             "player",     player.getName().getString(),
             "item",       itemShort,
             "nutrition",  food.nutrition(),
@@ -121,8 +120,6 @@ public class EventBroadcaster {
     // ── Player healed (aggregated) ───────────────────────────────────────
 
     public static void onLivingHeal(LivingHealEvent event) {
-        WebSocketServer ws = MinaretMod.getWebSocketServer();
-        if (ws == null) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         UUID uuid = player.getUUID();
@@ -135,7 +132,7 @@ public class EventBroadcaster {
         boolean timedOut = (now - accum.lastBroadcastMs()) >= HEAL_TIMEOUT_MS;
 
         if (thresholdReached || timedOut) {
-            ws.broadcast(event("player_heal",
+            broadcast(event("player_heal",
                 "player", player.getName().getString(),
                 "amount", accum.total()
             ));

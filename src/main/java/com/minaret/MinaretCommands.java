@@ -187,7 +187,6 @@ public final class MinaretCommands {
             );
             return 0;
         }
-        com.minaret.client.ChordKeyHandler.rebuildTrie();
         source.sendSuccess(
             () ->
                 Component.literal(
@@ -205,7 +204,6 @@ public final class MinaretCommands {
             );
             return 0;
         }
-        com.minaret.client.ChordKeyHandler.rebuildTrie();
         source.sendSuccess(
             () ->
                 Component.literal(

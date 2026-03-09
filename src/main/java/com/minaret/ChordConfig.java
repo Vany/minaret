@@ -33,6 +33,7 @@ public class ChordConfig {
 
     private String metaKey = "f";
     private final Map<String, ChordTarget> chords = new LinkedHashMap<>();
+    private Runnable onChanged;
 
     private static final ChordConfig INSTANCE = new ChordConfig();
 
@@ -42,6 +43,15 @@ public class ChordConfig {
 
     private ChordConfig() {}
 
+    /** Register a callback invoked after any mutation (add, remove, setMetaKey). */
+    public void setOnChanged(Runnable listener) {
+        this.onChanged = listener;
+    }
+
+    private void notifyChanged() {
+        if (onChanged != null) onChanged.run();
+    }
+
     public String getMetaKey() {
         return metaKey;
     }
@@ -49,6 +59,7 @@ public class ChordConfig {
     public void setMetaKey(String key) {
         this.metaKey = key.toLowerCase();
         save();
+        notifyChanged();
     }
 
     public Map<String, ChordTarget> getChords() {
@@ -70,6 +81,7 @@ public class ChordConfig {
         if (chords.containsKey(normalized)) return false;
         chords.put(normalized, target);
         save();
+        notifyChanged();
         return true;
     }
 
@@ -78,6 +90,7 @@ public class ChordConfig {
         String normalized = sequence.toLowerCase();
         if (chords.remove(normalized) == null) return false;
         save();
+        notifyChanged();
         return true;
     }
 

@@ -7,7 +7,7 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.*;
+import java.util.Set;
 import java.util.concurrent.*;
 import net.minecraft.server.MinecraftServer;
 import org.apache.logging.log4j.LogManager;
@@ -33,7 +33,7 @@ public class WebSocketServer {
     private final ServerSocket serverSocket;
     private final MinecraftServer mcServer;
     private final Set<Connection> connections = ConcurrentHashMap.newKeySet();
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private volatile boolean running = false;
     private final String authUsername;
     private final String authPassword;
@@ -211,10 +211,11 @@ public class WebSocketServer {
 
         void run() {
             byte[] readBuf = new byte[BUFFER_SIZE];
-            // Accumulates bytes across reads until a complete WebSocket frame arrives.
-            // Handles TCP fragmentation (frame split across reads) and coalescing
-            // (multiple frames arriving in a single read).
-            byte[] pending = new byte[0];
+            // Single pre-allocated accumulation buffer. `limit` tracks how many
+            // bytes are valid. On consume, the remainder is shifted left in-place —
+            // no per-read allocation, no Arrays.copyOfRange churn.
+            byte[] buf = new byte[MAX_ACCUMULATOR];
+            int limit = 0;
 
             try {
                 while (active && !socket.isClosed()) {
@@ -228,23 +229,20 @@ public class WebSocketServer {
                     }
                     if (bytesRead == -1) break;
 
-                    // Append newly read bytes to the pending buffer
-                    byte[] combined = new byte[pending.length + bytesRead];
-                    System.arraycopy(pending, 0, combined, 0, pending.length);
-                    System.arraycopy(readBuf, 0, combined, pending.length, bytesRead);
-                    pending = combined;
-
-                    if (pending.length > MAX_ACCUMULATOR) {
+                    if (limit + bytesRead > MAX_ACCUMULATOR) {
                         LOGGER.warn("Frame buffer overflow ({} bytes) — closing: {}",
-                            pending.length, socket.getRemoteSocketAddress());
+                            limit + bytesRead, socket.getRemoteSocketAddress());
                         break;
                     }
 
-                    // Consume all complete frames from the front of pending
+                    System.arraycopy(readBuf, 0, buf, limit, bytesRead);
+                    limit += bytesRead;
+
+                    // Consume all complete frames from the front of buf
                     int pos = 0;
-                    while (pending.length - pos >= 2) {
+                    while (limit - pos >= 2) {
                         WebSocketProtocol.Frame frame =
-                            WebSocketProtocol.parseFrame(pending, pos, pending.length - pos);
+                            WebSocketProtocol.parseFrame(buf, pos, limit - pos);
                         if (frame == null) break; // incomplete — wait for more bytes
 
                         if (frame.consumed() < 0) {
@@ -271,10 +269,10 @@ public class WebSocketServer {
                         }
                     }
 
-                    // Keep only the unprocessed remainder
-                    pending = pos > 0
-                        ? Arrays.copyOfRange(pending, pos, pending.length)
-                        : pending;
+                    // Shift unconsumed bytes to the front
+                    int remaining = limit - pos;
+                    if (remaining > 0 && pos > 0) System.arraycopy(buf, pos, buf, 0, remaining);
+                    limit = remaining;
                 }
             } catch (IOException e) {
                 LOGGER.debug("WebSocket connection closed: {}", e.getMessage());
