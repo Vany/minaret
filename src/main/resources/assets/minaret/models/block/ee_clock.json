@@ -1,8 +1,0 @@
-{
-  "parent": "block/cube_bottom_top",
-  "textures": {
-    "top": "minaret:block/ee_clock_top",
-    "bottom": "minaret:block/ee_clock_bottom",
-    "side": "minaret:block/ee_clock_side"
-  }
-}

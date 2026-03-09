@@ -1,6 +1,5 @@
 package com.minaret;
 
-import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -27,54 +26,23 @@ public class MinaretMod {
     }
 
     public MinaretMod(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(
-            ModConfig.Type.SERVER,
-            MinaretConfig.CONFIG_SPEC
-        );
-        MinaretRegistries.register(modEventBus);
+        modContainer.registerConfig(ModConfig.Type.SERVER, MinaretConfig.CONFIG_SPEC);
 
         NeoForge.EVENT_BUS.addListener(
             (net.neoforged.neoforge.event.RegisterCommandsEvent e) ->
                 MinaretCommands.register(e.getDispatcher())
         );
         NeoForge.EVENT_BUS.addListener(
-            (net.neoforged.neoforge.event.server.ServerStartingEvent e) ->
-                onServerStarting(e)
+            (net.neoforged.neoforge.event.server.ServerStartingEvent e) -> onServerStarting(e)
         );
         NeoForge.EVENT_BUS.addListener(
-            (net.neoforged.neoforge.event.server.ServerStoppingEvent e) ->
-                onServerStopping(e)
-        );
-        NeoForge.EVENT_BUS.addListener(
-            MartialLightningHandler::onLivingIncomingDamage
-        );
-        NeoForge.EVENT_BUS.addListener(DeadBlowHandler::onLivingIncomingDamage);
-        NeoForge.EVENT_BUS.addListener(HomingArcheryHandler::onArrowLoose);
-        NeoForge.EVENT_BUS.addListener(HomingArcheryHandler::onLivingDamage);
-        NeoForge.EVENT_BUS.addListener(MegaChanterHandler::onAnvilUpdate);
-        NeoForge.EVENT_BUS.addListener(InsaneLightHandler::onPlayerTick);
-        NeoForge.EVENT_BUS.addListener(InsaneLightHandler::onLivingChangeTarget);
-        NeoForge.EVENT_BUS.addListener(SwiftStrikeHandler::onPlayerTick);
-        NeoForge.EVENT_BUS.addListener(AccelerateHandler::onEntityJoinLevel);
-        NeoForge.EVENT_BUS.addListener(ToughnessHandler::onPlayerTick);
-        NeoForge.EVENT_BUS.addListener(
-            EventPriority.LOWEST, WardingPostTeleportHandler::onEntityTeleport
+            (net.neoforged.neoforge.event.server.ServerStoppingEvent e) -> onServerStopping(e)
         );
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onPlayerJoin);
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onPlayerLeave);
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onLivingDeath);
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onItemUseFinish);
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onLivingHeal);
-
-        NeoForge.EVENT_BUS.addListener(
-            (net.neoforged.neoforge.event.brewing.RegisterBrewingRecipesEvent e) -> {
-                e.getBuilder().addMix(
-                    net.minecraft.world.item.alchemy.Potions.AWKWARD,
-                    net.minecraft.world.item.Items.BOOK,
-                    MinaretRegistries.MEGA_CHANTER_POTION
-                );
-            }
-        );
 
         if (Compat.isClient()) {
             com.minaret.client.ChordKeyHandler.init(modEventBus);
@@ -85,22 +53,14 @@ public class MinaretMod {
         }
     }
 
-    private void onServerStarting(
-        net.neoforged.neoforge.event.server.ServerStartingEvent event
-    ) {
+    private void onServerStarting(net.neoforged.neoforge.event.server.ServerStartingEvent event) {
         currentServer = event.getServer();
-        var server = currentServer;
-        for (var level : server.getAllLevels()) {
-            ChunkLoaderData.get(level).forceAll(level);
-        }
-
         try {
             HostPort hp = HostPort.parse(MinaretConfig.WEBSOCKET_URL.get());
-
             webSocketServer = new WebSocketServer(
                 hp.host,
                 hp.port,
-                server,
+                currentServer,
                 MinaretConfig.AUTH_USERNAME.get(),
                 MinaretConfig.AUTH_PASSWORD.get()
             );
@@ -111,12 +71,7 @@ public class MinaretMod {
         }
     }
 
-    private void onServerStopping(
-        net.neoforged.neoforge.event.server.ServerStoppingEvent event
-    ) {
-        SpawnerAgitatorBlockEntity.unbindAll();
-        WardingColumnBlockEntity.clearRegistry();
-        ChunkLoaderData.reset();
+    private void onServerStopping(net.neoforged.neoforge.event.server.ServerStoppingEvent event) {
         currentServer = null;
         if (webSocketServer != null) {
             try {
@@ -142,11 +97,7 @@ public class MinaretMod {
                 try {
                     port = Integer.parseInt(url.substring(colon + 1));
                 } catch (NumberFormatException e) {
-                    LOGGER.warn(
-                        "Invalid port in '{}', using {}",
-                        url,
-                        DEFAULT_PORT
-                    );
+                    LOGGER.warn("Invalid port in '{}', using {}", url, DEFAULT_PORT);
                 }
             }
             return new HostPort(host, port);
