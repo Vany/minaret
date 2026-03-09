@@ -25,11 +25,15 @@ Minaret is a NeoForge mod (server + client) with three subsystems:
 
 | Parameter | Value |
 |-----------|-------|
-| Minecraft | 1.21.11 |
-| Mod loader | NeoForge 21.11.38-beta |
+| Minecraft | 1.21.1, 1.21.11 (multi-version build) |
+| Mod loader | NeoForge (21.1.172 / 21.11.38-beta) |
 | Java | 21+ |
 | External deps | None (std lib only) |
-| Side | Both (server: WebSocket/effects, client: chord keys) |
+| Side | Both (server: WebSocket, client: chord keys) |
+
+> **Note:** All blocks, mob effects, enchantments, and potions have been moved to
+> the companion mod **wnir** (`/Users/vany/l/wnir`). Minaret is now a pure
+> WebSocket + chord-key layer.
 
 ## 1. WebSocket Server
 
