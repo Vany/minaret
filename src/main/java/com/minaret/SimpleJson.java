@@ -281,4 +281,42 @@ public class SimpleJson {
             .replace("\r", "\\r")
             .replace("\t", "\\t");
     }
+
+    /**
+     * Unescape a JSON string value (with surrounding quotes already stripped).
+     * Handles standard JSON backslash sequences including {@code \uXXXX}.
+     */
+    public static String unescapeString(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '\\' && i + 1 < s.length()) {
+                char next = s.charAt(++i);
+                switch (next) {
+                    case '"'  -> sb.append('"');
+                    case '\\' -> sb.append('\\');
+                    case '/'  -> sb.append('/');
+                    case 'n'  -> sb.append('\n');
+                    case 'r'  -> sb.append('\r');
+                    case 't'  -> sb.append('\t');
+                    case 'b'  -> sb.append('\b');
+                    case 'f'  -> sb.append('\f');
+                    case 'u'  -> {
+                        if (i + 4 < s.length()) {
+                            try {
+                                sb.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16));
+                                i += 4;
+                                continue;
+                            } catch (NumberFormatException ignored) {}
+                        }
+                        sb.append('\\').append(next);
+                    }
+                    default -> sb.append('\\').append(next);
+                }
+            } else {
+                sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
 }

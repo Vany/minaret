@@ -4,6 +4,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 import java.lang.reflect.Field;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Reflection-based key consumption. Resets clickCount and isDown on
@@ -14,12 +16,16 @@ import net.minecraft.client.Minecraft;
  */
 public final class KeyConsumer {
 
+    private static final Logger LOGGER = LogManager.getLogger();
+
     private static final Field CLICK_COUNT;
     private static final Field KEY_FIELD;
 
     static {
         CLICK_COUNT = resolveClickCount();
         KEY_FIELD = resolveField("key");
+        if (CLICK_COUNT == null) LOGGER.warn("KeyConsumer: could not resolve 'clickCount' field — chord keys may leak through");
+        if (KEY_FIELD == null)   LOGGER.warn("KeyConsumer: could not resolve 'key' field — chord key firing will not work");
     }
 
     private KeyConsumer() {}
@@ -28,14 +34,14 @@ public final class KeyConsumer {
     public static void consumeKey(int keyCode) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.options == null || CLICK_COUNT == null) return;
-        InputConstants.Key inputKey = InputConstants.Type.KEYSYM.getOrCreate(
-            keyCode
-        );
+        InputConstants.Key inputKey = InputConstants.Type.KEYSYM.getOrCreate(keyCode);
         for (KeyMapping km : mc.options.keyMappings) {
             if (km.isActiveAndMatches(inputKey)) {
                 try {
                     CLICK_COUNT.setInt(km, 0);
-                } catch (IllegalAccessException ignored) {}
+                } catch (IllegalAccessException e) {
+                    LOGGER.warn("Cannot reset clickCount for '{}': {}", km.getName(), e.getMessage());
+                }
                 km.setDown(false);
             }
         }
@@ -43,13 +49,16 @@ public final class KeyConsumer {
 
     /** Trigger the action bound to a KeyMapping by simulating a click on its bound key. */
     public static void clickKeyMapping(KeyMapping target) {
-        if (KEY_FIELD == null) return;
+        if (KEY_FIELD == null) {
+            LOGGER.warn("Cannot click '{}': 'key' field not resolved", target.getName());
+            return;
+        }
         try {
-            InputConstants.Key boundKey = (InputConstants.Key) KEY_FIELD.get(
-                target
-            );
+            InputConstants.Key boundKey = (InputConstants.Key) KEY_FIELD.get(target);
             KeyMapping.click(boundKey);
-        } catch (Exception ignored) {}
+        } catch (Exception e) {
+            LOGGER.warn("Failed to click KeyMapping '{}': {}", target.getName(), e.getMessage());
+        }
     }
 
     // ── Reflection resolution ───────────────────────────────────────────
@@ -64,6 +73,7 @@ public final class KeyConsumer {
             for (Field f : KeyMapping.class.getDeclaredFields()) {
                 if (f.getType() == int.class) {
                     f.setAccessible(true);
+                    LOGGER.warn("KeyConsumer: 'clickCount' not found by name, using first int field '{}' as fallback", f.getName());
                     return f;
                 }
             }

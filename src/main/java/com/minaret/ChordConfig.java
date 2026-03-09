@@ -160,32 +160,10 @@ public class ChordConfig {
     }
 
     private static String unquoteToml(String value) {
-        if (
-            value.length() >= 2 &&
-            value.startsWith("\"") &&
-            value.endsWith("\"")
-        ) {
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
             value = value.substring(1, value.length() - 1);
         }
-        StringBuilder sb = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            if (ch == '\\' && i + 1 < value.length()) {
-                char next = value.charAt(i + 1);
-                switch (next) {
-                    case '\\' -> sb.append('\\');
-                    case '"' -> sb.append('"');
-                    case 'n' -> sb.append('\n');
-                    case 'r' -> sb.append('\r');
-                    case 't' -> sb.append('\t');
-                    default -> sb.append('\\').append(next);
-                }
-                i++;
-            } else {
-                sb.append(ch);
-            }
-        }
-        return sb.toString();
+        return SimpleJson.unescapeString(value);
     }
 
     // ── JSON migration ──────────────────────────────────────────────────

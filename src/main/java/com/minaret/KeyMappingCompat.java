@@ -25,7 +25,7 @@ public final class KeyMappingCompat {
             // Try 1.21.11: KeyMapping(String, int, KeyMapping.Category)
             for (Class<?> inner : km.getDeclaredClasses()) {
                 if (inner.getSimpleName().equals("Category")) {
-                    Object identifier = Compat.createIdentifier(MinaretMod.MOD_ID, categoryId);
+                    Object identifier = createIdentifier(MinaretMod.MOD_ID, categoryId);
                     Object category = getCategoryInstance(inner, identifier);
                     Constructor<?> ctor = km.getConstructor(String.class, int.class, inner);
                     return ctor.newInstance(name, keyCode, category);
@@ -62,6 +62,27 @@ public final class KeyMappingCompat {
         } catch (Exception e) {
             throw new RuntimeException("Cannot register KeyMapping", e);
         }
+    }
+
+    /**
+     * Creates an Identifier/ResourceLocation cross-version.
+     * 1.21.1 uses ResourceLocation; 1.21.11 uses Identifier (renamed).
+     */
+    private static Object createIdentifier(String namespace, String path) {
+        for (String cls : new String[]{
+            "net.minecraft.resources.Identifier",
+            "net.minecraft.resources.ResourceLocation",
+        }) {
+            try {
+                return Class.forName(cls)
+                    .getMethod("fromNamespaceAndPath", String.class, String.class)
+                    .invoke(null, namespace, path);
+            } catch (ClassNotFoundException ignored) {
+            } catch (Exception e) {
+                LOGGER.error("Failed to create identifier {}:{} via {}", namespace, path, cls, e);
+            }
+        }
+        throw new RuntimeException("Cannot create identifier " + namespace + ":" + path);
     }
 
     private static Object getCategoryInstance(Class<?> categoryClass, Object identifier) {

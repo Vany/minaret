@@ -1,8 +1,10 @@
 package com.minaret;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
@@ -20,6 +22,13 @@ public class WebSocketServer {
     private static final Logger LOGGER = LogManager.getLogger();
     private static final int BUFFER_SIZE = 4096;
     private static final int SHUTDOWN_TIMEOUT_SECONDS = 5;
+    /**
+     * Idle read timeout: if a client sends no data for this long the connection is closed.
+     * Prevents zombie threads from stuck/dead clients holding executor slots indefinitely.
+     */
+    private static final int READ_TIMEOUT_MS = 300_000; // 5 minutes
+    /** Max bytes accumulated across reads before giving up on a connection. */
+    private static final int MAX_ACCUMULATOR = 131_072; // 128 KB
 
     private final ServerSocket serverSocket;
     private final MinecraftServer mcServer;
@@ -38,12 +47,18 @@ public class WebSocketServer {
         String password
     ) throws IOException {
         this.mcServer = mcServer;
-        this.serverSocket = new ServerSocket(port);
         this.authUsername = username;
         this.authPassword = password;
         this.authEnabled = !username.isEmpty();
-        LOGGER.info(
-            "WebSocket server created on port {} (auth: {})",
+
+        // Bind to the configured host; null = all interfaces (0.0.0.0)
+        InetAddress bindAddr = (host.isEmpty() || host.equals("0.0.0.0"))
+            ? null
+            : InetAddress.getByName(host);
+        this.serverSocket = new ServerSocket(port, 50, bindAddr);
+
+        LOGGER.info("WebSocket server created on {}:{} (auth: {})",
+            bindAddr == null ? "*" : bindAddr.getHostAddress(),
             port,
             authEnabled ? "enabled" : "disabled"
         );
@@ -52,10 +67,7 @@ public class WebSocketServer {
     public void start() {
         running = true;
         executor.submit(this::acceptLoop);
-        LOGGER.info(
-            "WebSocket server started on port {}",
-            serverSocket.getLocalPort()
-        );
+        LOGGER.info("WebSocket server started on port {}", serverSocket.getLocalPort());
     }
 
     /** Sends a message to all connected clients. Called from server thread. */
@@ -81,12 +93,7 @@ public class WebSocketServer {
         connections.clear();
         executor.shutdown();
         try {
-            if (
-                !executor.awaitTermination(
-                    SHUTDOWN_TIMEOUT_SECONDS,
-                    TimeUnit.SECONDS
-                )
-            ) {
+            if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -102,10 +109,7 @@ public class WebSocketServer {
         while (running && !serverSocket.isClosed()) {
             try {
                 Socket socket = serverSocket.accept();
-                LOGGER.debug(
-                    "New connection from: {}",
-                    socket.getRemoteSocketAddress()
-                );
+                LOGGER.debug("New connection from: {}", socket.getRemoteSocketAddress());
                 executor.submit(() -> handleNewConnection(socket));
             } catch (IOException e) {
                 if (running) LOGGER.error("Error accepting connection", e);
@@ -115,78 +119,57 @@ public class WebSocketServer {
 
     private void handleNewConnection(Socket socket) {
         try {
+            socket.setSoTimeout(READ_TIMEOUT_MS);
+
             BufferedReader reader = new BufferedReader(
-                new InputStreamReader(
-                    socket.getInputStream(),
-                    StandardCharsets.UTF_8
-                )
+                new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8)
             );
             OutputStream output = socket.getOutputStream();
 
-            Map<String, String> headers = WebSocketProtocol.readHttpHeaders(
-                reader
-            );
+            Map<String, String> headers = WebSocketProtocol.readHttpHeaders(reader);
             if (headers == null) {
                 socket.close();
                 return;
             }
 
             if (!WebSocketProtocol.isWebSocketUpgrade(headers)) {
-                WebSocketProtocol.sendHttpResponse(
-                    output,
+                WebSocketProtocol.sendHttpResponse(output,
                     "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n" +
-                        "Content-Length: 42\r\n\r\nWebSocket endpoint - use WebSocket client"
+                    "Content-Length: 42\r\n\r\nWebSocket endpoint - use WebSocket client"
                 );
                 socket.close();
                 return;
             }
 
             if (authEnabled && !isValidAuth(headers.get("authorization"))) {
-                WebSocketProtocol.sendHttpResponse(
-                    output,
+                WebSocketProtocol.sendHttpResponse(output,
                     "HTTP/1.1 401 Unauthorized\r\n" +
-                        "WWW-Authenticate: Basic realm=\"Minaret WebSocket\"\r\n" +
-                        "Content-Type: text/plain\r\nContent-Length: 12\r\n\r\nUnauthorized"
+                    "WWW-Authenticate: Basic realm=\"Minaret WebSocket\"\r\n" +
+                    "Content-Type: text/plain\r\nContent-Length: 12\r\n\r\nUnauthorized"
                 );
                 socket.close();
-                LOGGER.warn(
-                    "Authentication failed from: {}",
-                    socket.getRemoteSocketAddress()
-                );
+                LOGGER.warn("Authentication failed from: {}", socket.getRemoteSocketAddress());
                 return;
             }
 
-            // Complete handshake
-            String acceptKey = WebSocketProtocol.generateAcceptKey(
-                headers.get("sec-websocket-key")
-            );
-            WebSocketProtocol.sendHttpResponse(
-                output,
+            String acceptKey = WebSocketProtocol.generateAcceptKey(headers.get("sec-websocket-key"));
+            WebSocketProtocol.sendHttpResponse(output,
                 "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n" +
-                    "Connection: Upgrade\r\nSec-WebSocket-Accept: " +
-                    acceptKey +
-                    "\r\n\r\n"
+                "Connection: Upgrade\r\nSec-WebSocket-Accept: " + acceptKey + "\r\n\r\n"
             );
 
             Connection conn = new Connection(socket, mcServer, connections);
             connections.add(conn);
             executor.submit(conn::run);
-            LOGGER.info(
-                "WebSocket connection established: {}",
-                socket.getRemoteSocketAddress()
-            );
+            LOGGER.info("WebSocket connection established: {}", socket.getRemoteSocketAddress());
         } catch (Exception e) {
             LOGGER.error("Error handling new connection", e);
-            try {
-                socket.close();
-            } catch (IOException ignored) {}
+            try { socket.close(); } catch (IOException ignored) {}
         }
     }
 
     private boolean isValidAuth(String authHeader) {
-        if (
-            authHeader == null || !authHeader.startsWith("Basic ")
-        ) return false;
+        if (authHeader == null || !authHeader.startsWith("Basic ")) return false;
         try {
             String decoded = new String(
                 Base64.getDecoder().decode(authHeader.substring(6)),
@@ -195,16 +178,12 @@ public class WebSocketServer {
             String[] creds = decoded.split(":", 2);
             if (creds.length != 2) return false;
             // Constant-time comparison to prevent timing attacks
-            return (
-                MessageDigest.isEqual(
+            return MessageDigest.isEqual(
                     authUsername.getBytes(StandardCharsets.UTF_8),
-                    creds[0].getBytes(StandardCharsets.UTF_8)
-                ) &&
-                MessageDigest.isEqual(
+                    creds[0].getBytes(StandardCharsets.UTF_8))
+                && MessageDigest.isEqual(
                     authPassword.getBytes(StandardCharsets.UTF_8),
-                    creds[1].getBytes(StandardCharsets.UTF_8)
-                )
-            );
+                    creds[1].getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             return false;
         }
@@ -221,11 +200,8 @@ public class WebSocketServer {
         private final Set<Connection> connections;
         private volatile boolean active = true;
 
-        Connection(
-            Socket socket,
-            MinecraftServer mcServer,
-            Set<Connection> connections
-        ) throws IOException {
+        Connection(Socket socket, MinecraftServer mcServer, Set<Connection> connections)
+                throws IOException {
             this.socket = socket;
             this.input = socket.getInputStream();
             this.output = socket.getOutputStream();
@@ -234,31 +210,71 @@ public class WebSocketServer {
         }
 
         void run() {
+            byte[] readBuf = new byte[BUFFER_SIZE];
+            // Accumulates bytes across reads until a complete WebSocket frame arrives.
+            // Handles TCP fragmentation (frame split across reads) and coalescing
+            // (multiple frames arriving in a single read).
+            byte[] pending = new byte[0];
+
             try {
-                byte[] buffer = new byte[BUFFER_SIZE];
                 while (active && !socket.isClosed()) {
-                    int bytesRead = input.read(buffer);
+                    int bytesRead;
+                    try {
+                        bytesRead = input.read(readBuf);
+                    } catch (SocketTimeoutException e) {
+                        LOGGER.debug("Read timeout — closing idle connection: {}",
+                            socket.getRemoteSocketAddress());
+                        break;
+                    }
                     if (bytesRead == -1) break;
-                    if (bytesRead < 2) continue;
 
-                    WebSocketProtocol.Frame frame =
-                        WebSocketProtocol.parseFrame(buffer, bytesRead);
-                    if (frame == null) continue;
+                    // Append newly read bytes to the pending buffer
+                    byte[] combined = new byte[pending.length + bytesRead];
+                    System.arraycopy(pending, 0, combined, 0, pending.length);
+                    System.arraycopy(readBuf, 0, combined, pending.length, bytesRead);
+                    pending = combined;
 
-                    switch (frame.opcode()) {
-                        case WebSocketProtocol.OPCODE_TEXT -> onMessage(
-                            new String(frame.payload(), StandardCharsets.UTF_8)
-                        );
-                        case WebSocketProtocol.OPCODE_CLOSE -> {
+                    if (pending.length > MAX_ACCUMULATOR) {
+                        LOGGER.warn("Frame buffer overflow ({} bytes) — closing: {}",
+                            pending.length, socket.getRemoteSocketAddress());
+                        break;
+                    }
+
+                    // Consume all complete frames from the front of pending
+                    int pos = 0;
+                    while (pending.length - pos >= 2) {
+                        WebSocketProtocol.Frame frame =
+                            WebSocketProtocol.parseFrame(pending, pos, pending.length - pos);
+                        if (frame == null) break; // incomplete — wait for more bytes
+
+                        if (frame.consumed() < 0) {
+                            // Unsupported 64-bit payload — close cleanly
+                            LOGGER.debug("Unsupported 64-bit frame — closing: {}",
+                                socket.getRemoteSocketAddress());
                             sendClose();
                             close();
+                            return;
                         }
-                        case WebSocketProtocol.OPCODE_PING -> sendPong(
-                            frame.payload()
-                        );
-                        case WebSocketProtocol.OPCODE_PONG -> {
+
+                        pos += frame.consumed();
+
+                        switch (frame.opcode()) {
+                            case WebSocketProtocol.OPCODE_TEXT ->
+                                onMessage(new String(frame.payload(), StandardCharsets.UTF_8));
+                            case WebSocketProtocol.OPCODE_CLOSE -> {
+                                sendClose();
+                                close();
+                                return;
+                            }
+                            case WebSocketProtocol.OPCODE_PING -> sendPong(frame.payload());
+                            case WebSocketProtocol.OPCODE_PONG -> {}
                         }
                     }
+
+                    // Keep only the unprocessed remainder
+                    pending = pos > 0
+                        ? Arrays.copyOfRange(pending, pos, pending.length)
+                        : pending;
                 }
             } catch (IOException e) {
                 LOGGER.debug("WebSocket connection closed: {}", e.getMessage());

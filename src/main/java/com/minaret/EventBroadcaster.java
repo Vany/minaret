@@ -1,10 +1,11 @@
 package com.minaret;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.food.FoodProperties;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
@@ -15,7 +16,6 @@ import org.apache.logging.log4j.Logger;
 
 /**
  * Broadcasts server-side game events to all connected WebSocket clients.
- * Each handler builds a flat JSON string and calls WebSocketServer.broadcast().
  *
  * Events:
  *   player_join    — player logged in
@@ -46,15 +46,22 @@ public class EventBroadcaster {
         }
     }
 
+    // ── JSON helper ──────────────────────────────────────────────────────
+
+    /** Build an event JSON string with "event" first, then additional key-value pairs. */
+    private static String event(String type, Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("event", type);
+        for (int i = 0; i + 1 < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
+        return SimpleJson.generate(m);
+    }
+
     // ── Player join ──────────────────────────────────────────────────────
 
     public static void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
         WebSocketServer ws = MinaretMod.getWebSocketServer();
         if (ws == null) return;
-        String player = event.getEntity().getName().getString();
-        ws.broadcast(
-            "{\"event\":\"player_join\",\"player\":\"" + SimpleJson.escapeString(player) + "\"}"
-        );
+        ws.broadcast(event("player_join", "player", event.getEntity().getName().getString()));
     }
 
     // ── Player leave ─────────────────────────────────────────────────────
@@ -62,10 +69,7 @@ public class EventBroadcaster {
     public static void onPlayerLeave(PlayerEvent.PlayerLoggedOutEvent event) {
         WebSocketServer ws = MinaretMod.getWebSocketServer();
         if (ws == null) return;
-        String player = event.getEntity().getName().getString();
-        ws.broadcast(
-            "{\"event\":\"player_leave\",\"player\":\"" + SimpleJson.escapeString(player) + "\"}"
-        );
+        ws.broadcast(event("player_leave", "player", event.getEntity().getName().getString()));
     }
 
     // ── Death ────────────────────────────────────────────────────────────
@@ -76,27 +80,19 @@ public class EventBroadcaster {
 
         // player died
         if (event.getEntity() instanceof ServerPlayer player) {
-            String name = player.getName().getString();
-            String cause = event.getSource().getMsgId();
-            ws.broadcast(
-                "{\"event\":\"player_death\"" +
-                ",\"player\":\"" + SimpleJson.escapeString(name) + "\"" +
-                ",\"cause\":\"" + SimpleJson.escapeString(cause) + "\"}"
-            );
+            ws.broadcast(event("player_death",
+                "player", player.getName().getString(),
+                "cause",  event.getSource().getMsgId()
+            ));
             return;
         }
 
         // player killed a mob
-        if (event.getSource().getEntity() instanceof Player killer) {
-            // only server-side kills
-            if (!(killer instanceof ServerPlayer)) return;
-            String killerName = killer.getName().getString();
-            String mobType = event.getEntity().getType().toShortString();
-            ws.broadcast(
-                "{\"event\":\"player_kill\"" +
-                ",\"player\":\"" + SimpleJson.escapeString(killerName) + "\"" +
-                ",\"mob\":\"" + SimpleJson.escapeString(mobType) + "\"}"
-            );
+        if (event.getSource().getEntity() instanceof ServerPlayer killer) {
+            ws.broadcast(event("player_kill",
+                "player", killer.getName().getString(),
+                "mob",    event.getEntity().getType().toShortString()
+            ));
         }
     }
 
@@ -108,23 +104,18 @@ public class EventBroadcaster {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         FoodProperties food = event.getItem().get(DataComponents.FOOD);
-        if (food == null) return; // not food
+        if (food == null) return;
 
-        String playerName = player.getName().getString();
         String item = event.getItem().getItem().getDescriptionId();
-        // strip "item.minecraft." / "block.minecraft." prefix for readability
         int dot = item.lastIndexOf('.');
         String itemShort = dot >= 0 ? item.substring(dot + 1) : item;
-        int nutrition = food.nutrition();
-        float saturation = food.saturation();
 
-        ws.broadcast(
-            "{\"event\":\"player_eat\"" +
-            ",\"player\":\"" + SimpleJson.escapeString(playerName) + "\"" +
-            ",\"item\":\"" + SimpleJson.escapeString(itemShort) + "\"" +
-            ",\"nutrition\":" + nutrition +
-            ",\"saturation\":" + saturation + "}"
-        );
+        ws.broadcast(event("player_eat",
+            "player",     player.getName().getString(),
+            "item",       itemShort,
+            "nutrition",  food.nutrition(),
+            "saturation", food.saturation()
+        ));
     }
 
     // ── Player healed (aggregated) ───────────────────────────────────────
@@ -135,27 +126,22 @@ public class EventBroadcaster {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         UUID uuid = player.getUUID();
-        String name = player.getName().getString();
-        float amount = event.getAmount();
-
         HealAccum accum = healAccum
             .getOrDefault(uuid, new HealAccum(0f, System.currentTimeMillis()))
-            .add(amount);
+            .add(event.getAmount());
 
         long now = System.currentTimeMillis();
         boolean thresholdReached = accum.total() >= HEAL_THRESHOLD;
         boolean timedOut = (now - accum.lastBroadcastMs()) >= HEAL_TIMEOUT_MS;
 
         if (thresholdReached || timedOut) {
-            ws.broadcast(
-                "{\"event\":\"player_heal\"" +
-                ",\"player\":\"" + SimpleJson.escapeString(name) + "\"" +
-                ",\"amount\":" + String.format("%.1f", accum.total()) + "}"
-            );
+            ws.broadcast(event("player_heal",
+                "player", player.getName().getString(),
+                "amount", accum.total()
+            ));
             healAccum.put(uuid, accum.reset());
         } else {
             healAccum.put(uuid, accum);
         }
     }
-
 }

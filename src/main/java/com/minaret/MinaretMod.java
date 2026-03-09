@@ -86,21 +86,26 @@ public class MinaretMod {
     private record HostPort(String host, int port) {
         private static final int DEFAULT_PORT = 8765;
 
+        /**
+         * Parse "host:port" into a HostPort. Supports IPv6 addresses in bracket
+         * notation (e.g. "[::1]:8765") by delegating to {@link java.net.URI}.
+         * Falls back to localhost:8765 on any parse failure.
+         */
         static HostPort parse(String url) {
-            int colon = url.lastIndexOf(':');
-            String host =
-                colon > 0
-                    ? url.substring(0, colon)
-                    : (url.isEmpty() ? "localhost" : url);
-            int port = DEFAULT_PORT;
-            if (colon >= 0 && colon + 1 < url.length()) {
-                try {
-                    port = Integer.parseInt(url.substring(colon + 1));
-                } catch (NumberFormatException e) {
-                    LOGGER.warn("Invalid port in '{}', using {}", url, DEFAULT_PORT);
-                }
+            if (url == null || url.isEmpty()) return new HostPort("localhost", DEFAULT_PORT);
+            try {
+                // Prepend a dummy scheme so URI can parse bare host:port strings
+                java.net.URI uri = new java.net.URI("ws://" + url);
+                String host = uri.getHost();
+                int port = uri.getPort();
+                return new HostPort(
+                    host != null && !host.isEmpty() ? host : "localhost",
+                    port > 0 ? port : DEFAULT_PORT
+                );
+            } catch (java.net.URISyntaxException e) {
+                LOGGER.warn("Invalid WebSocket URL '{}', using defaults: {}", url, e.getMessage());
+                return new HostPort("localhost", DEFAULT_PORT);
             }
-            return new HostPort(host, port);
         }
     }
 }
