@@ -54,6 +54,9 @@ public class MinaretMod {
         NeoForge.EVENT_BUS.addListener(MegaChanterHandler::onAnvilUpdate);
         NeoForge.EVENT_BUS.addListener(InsaneLightHandler::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(InsaneLightHandler::onLivingChangeTarget);
+        NeoForge.EVENT_BUS.addListener(SwiftStrikeHandler::onPlayerTick);
+        NeoForge.EVENT_BUS.addListener(AccelerateHandler::onEntityJoinLevel);
+        NeoForge.EVENT_BUS.addListener(ToughnessHandler::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(
             EventPriority.LOWEST, WardingPostTeleportHandler::onEntityTeleport
         );
@@ -62,6 +65,16 @@ public class MinaretMod {
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onLivingDeath);
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onItemUseFinish);
         NeoForge.EVENT_BUS.addListener(EventBroadcaster::onLivingHeal);
+
+        NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.event.brewing.RegisterBrewingRecipesEvent e) -> {
+                e.getBuilder().addMix(
+                    net.minecraft.world.item.alchemy.Potions.AWKWARD,
+                    net.minecraft.world.item.Items.BOOK,
+                    MinaretRegistries.MEGA_CHANTER_POTION
+                );
+            }
+        );
 
         if (Compat.isClient()) {
             com.minaret.client.ChordKeyHandler.init(modEventBus);

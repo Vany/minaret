@@ -7,6 +7,10 @@
 - [ ] backpack collector
 - [ ] mob damager
 - [ ] change agitator to randomly recheck configuration
+- [x] enchantments on enchanting table
+- [x] enchanted weapons in dungeon loot
+- [x] EE Clock machine accelerator block
+- [x] Mega Chanter potion brewing recipe
 
 
 
@@ -21,8 +25,8 @@ Minaret is a NeoForge mod (server + client) with three subsystems:
 
 | Parameter | Value |
 |-----------|-------|
-| Minecraft | 1.21.1, 1.21.11 (multi-version build) |
-| Mod loader | NeoForge (21.1.172+ / 21.11.38-beta) |
+| Minecraft | 1.21.11 |
+| Mod loader | NeoForge 21.11.38-beta |
 | Java | 21+ |
 | External deps | None (std lib only) |
 | Side | Both (server: WebSocket/effects, client: chord keys) |
@@ -77,9 +81,10 @@ Permission check uses reflection fallback for 1.21.11+ API changes.
 - Single-frame messages only (no continuation frames)
 - Max useful payload: 65535 bytes
 
-## 2. Custom Mob Effects
+## 2. Custom Mob Effects & Potions
 
-Three effects registered via `DeferredRegister<MobEffect>`. All beneficial category.
+Three mob effects registered via `DeferredRegister<MobEffect>`. All beneficial category.
+One potion registered via `DeferredRegister<Potion>`.
 
 ### Martial Lightning (`martial_lightning`)
 Color: `#00BFFF`. Enhances melee attacks based on held weapon tier:
@@ -106,6 +111,14 @@ Color: `#9B30FF`. Replaces bow arrows with homing `ShulkerBullet`:
 
 ### Streamer Protect (`streamer_protect`)
 Color: `#FFD700`. Indicator-only effect — logic handled externally. No handler code in mod.
+
+### Mega Chanter Potion (`mega_chanter`)
+Potion version of the Mega Chanter mob effect (duration 3600 ticks, amplifier 0).
+
+**Brewing recipe:** Awkward Potion + Book → Mega Chanter Potion.
+Registered via `RegisterBrewingRecipesEvent` on `NeoForge.EVENT_BUS` (NOT modEventBus).
+
+Splash and lingering variants are available via vanilla brewing — not blocked intentionally.
 
 ## 3. Configuration
 
@@ -219,7 +232,7 @@ A block placed in a column below one or more vanilla mob spawners. Column layout
 
 **NBT:** Persists `SpawnerCount` and indexed `OriginalRange_N`, `OriginalMinDelay_N`, `OriginalMaxDelay_N` ints so all spawners can be restored after chunk reload.
 
-**Known limitation:** Spawner placed *after* an agitator is only detected on chunk reload (`onLoad`), not immediately. The `neighborChanged` override cannot be used cross-version (1.21.11 changed the signature to use `Orientation` instead of `BlockPos`).
+**Known limitation:** Spawner placed *after* an agitator is only detected on chunk reload (`onLoad`), not immediately. The `neighborChanged` override uses `Orientation` (1.21.11 signature); not currently overridden — detection deferred to `onLoad`.
 
 ### Chunk Loader (`chunk_loader`)
 
@@ -291,6 +304,34 @@ Prevents mobs (and entities) from teleporting when within the column's inhibit r
 - `WardingPostBlockEntity` — gains `cachedInhibitorCount` field; `teleportInhibitRadius()` covers both types
 - `WardingPostTeleportHandler` — scans `WardingColumnBlock` blocks in range; reads radius from top-of-column BE (either type)
 
+### EE Clock (`ee_clock`)
+
+A column block that accelerates the machine above or below the column. Each EE Clock in the column grants one extra tick per game tick to the machine (N clocks = N+1 total ticks).
+
+**Column layout:** stack EE Clocks below any block-entity machine (furnace, spawner, etc.). Or place EE Clocks on top of a machine (machine below column bottom).
+
+**Mechanics:**
+- Only the topmost EE Clock ticks (others skip via `isTopOfColumn` flag)
+- `serverTick`: tries `pos.above()` first; if no valid `BaseEntityBlock` found, falls back to `pos.below(columnHeight)` (block directly below column bottom)
+- Calls `ticker.tick()` exactly `columnHeight` extra times per game tick
+- `columnHeight`: counted by `ColumnHelper.countBelow` (includes self, so top block = full column height)
+
+**Column events (same pattern as Warding Post):**
+
+| Event | Action |
+|-------|--------|
+| `onPlace` (Block) | `notifyColumn()` — recalc all EE Clocks in column |
+| `playerWillDestroy` (Block) | `notifyColumnExcluding(removed)` — recalc skipping removed block (block still in world) |
+| `affectNeighborsAfterRemoval` (Block) | `notifyColumn(pos)` + `notifyColumn(pos.above())` — recalc after non-player removal (TNT, pistons, commands); block at pos is already air |
+| `randomTick` (Block) | `notifyColumn()` — periodic integrity recheck |
+| `onLoad` (BlockEntity) | `recalcColumn(null)` — recompute on server-side chunk load |
+
+**Ticker helper:** `EEClockBlock.getMachineTicker(level, state, entityBlock, be)` uses `@SuppressWarnings("unchecked")` cast `(BlockEntityType<T>) be.getType()` to resolve the wildcard type. Cast is safe because the `BlockEntity` instance and its type always correspond.
+
+**Loot:** found in End City treasure chests (weight 5, empty weight 10).
+
+**Texture:** cube_bottom_top model with `ee_clock_top`, `ee_clock_bottom`, `ee_clock_side` textures. Material: METAL sound, COLOR_CYAN, random ticks enabled.
+
 ### Compat (reflection utilities)
 
 Caches all reflected `Method` and `Class` objects in `static final` fields, resolved once at class load:
@@ -300,34 +341,72 @@ Caches all reflected `Method` and `Class` objects in `static final` fields, reso
 - `setBlockId` / `setItemId` — 1.21.11+ only (uses `Identifier` class)
 - `isClient()` — detects client vs server via `FMLEnvironment.dist` with fallback to `getDist()`
 
-## 6. Multi-version Build
+## 6. Custom Enchantments & Loot
 
-Shared source in `src/main/` compiled by version-specific subprojects:
-- `versions/1.21.1/` — MC 1.21.1, NeoForge 21.1.172
-- `versions/1.21.11/` — MC 1.21.11, NeoForge 21.11.38-beta
+Three enchantments defined as JSON data files under `data/minaret/enchantment/`. Handlers registered via `NeoForge.EVENT_BUS`.
 
-Each subproject has `gradle.properties` with `minecraft_version`, `neo_version`, range constraints. Root `build.gradle` applies userdev plugin and rewires `sourceSets` to root source dirs.
+### Swift Strike (`swift_strike`)
+Attack speed boost. Handler: `SwiftStrikeHandler::onPlayerTick`.
 
-API compatibility: `/minaret exec` permission check uses reflection to handle `hasPermission(int)` removal in 1.21.11+.
+### Accelerate (`accelerate`)
+Movement speed boost. Handler: `AccelerateHandler::onEntityJoinLevel`.
 
-## 7. Decisions Made
+### Toughness (`toughness`)
+Armor/damage resistance bonus. Handler: `ToughnessHandler::onPlayerTick`.
+
+### Enchanting Table
+All three enchantments appear in the enchanting table via the vanilla tag:
+`data/minecraft/tags/enchantment/in_enchanting_table.json`
+
+### Mob Spawn Equipment
+All three enchantments can appear on weapons/armor mobs spawn with via the vanilla tag:
+`data/minecraft/tags/enchantment/on_mob_spawn_equipment.json`
+
+### Dungeon Loot
+Two loot modifiers inject enchanted items into dungeon chests:
+
+**`add_enchantment_books_loot`** — enchantment books injected into dungeon loot.
+Registered in `global_loot_modifiers.json` (was defined but previously unregistered — fixed).
+
+**`add_enchanted_weapons_loot`** — pre-enchanted weapons/armor injected into dungeons:
+- Iron sword + swift_strike (weight 3)
+- Bow + accelerate (weight 2)
+- Iron chestplate + toughness (weight 1)
+- Empty (weight 9)
+
+Applies to: simple_dungeon, abandoned_mineshaft, stronghold_corridor, stronghold_crossing, desert_pyramid, jungle_temple.
+
+## 7. Build
+
+Single version: `versions/1.21.11/` — MC 1.21.11, NeoForge 21.11.38-beta.
+
+`gradle.properties` defines `minecraft_version`, `neo_version`, range constraints. Root `build.gradle` applies userdev plugin and rewires `sourceSets` to root `src/main/` dirs.
+
+Build: `make build-1.21.11`. Deploy: copy `versions/1.21.11/build/libs/minaret-1.21.11-*.jar` to instance mods folder.
+
+## 8. Decisions Made
 
 1. **No external dependencies** — avoids jar bundling complexity; custom WebSocket + JSON
 2. **Flat JSON only** — `SimpleJson` handles `Map<String,String>` which covers the protocol; `getEffects` array is hand-built as a one-off
 3. **OP4 for all commands** — simplifies authorization; external auth layer is the access gate
 4. **CachedThreadPool** — unbounded thread pool; acceptable given expected low connection count (<10)
 5. **No continuation frames** — single-frame messages only; sufficient for JSON payloads under 64KB
-6. **Reflection for version compat** — `hasPermission`, `FMLEnvironment.dist`/`getDist()`, `KeyMapping` constructor all differ between versions; reflection handles all three
+6. **Reflection for API access** — `hasPermission` removed in 1.21.11 (use reflection fallback); `FMLEnvironment.dist`/`getDist()` for client detection; `KeyMapping` constructor takes `Category` record in 1.21.11
 7. **Direct KeyMapping firing for chords** — chords map directly to KeyMapping names (e.g. `key:sophisticatedbackpacks.openbackpack`) or WebSocket commands (`cmd:{...}`). No phantom/virtual keycodes needed. `KeyMapping.click(boundKey)` fires the target action directly.
 8. **Separate chord config file** — `config/minaret-chords.json` instead of ModConfigSpec, because chord data is nested (map of sequence→target) and client-side only
 9. **Reflection-based key consumption** — `InputEvent.Key` is not cancelable in NeoForge. Keys are consumed by resetting `clickCount` to 0 and `setDown(false)` on matching KeyMappings via reflection, since `KeyMapping.click()` fires before the event
 10. **No world access in `setRemoved()`** — causes infinite loops during chunk unload. All cleanup moved to `playerWillDestroy()` on the Block class
 11. **`AGITATED_RANGE = -1`** — makes spawner always active (bypasses player range check). Chunk is force-loaded while agitator is bound
-12. **Plain text file for ChunkLoaderData** — `SavedData`/`SavedDataType` API differs between 1.21.1 and 1.21.11; simple text file avoids the incompatibility
+12. **Plain text file for ChunkLoaderData** — simple `X Y Z` per line, atomic save via tmp+rename; avoids `SavedData` complexity
 13. **Atomic file save** — write to `.tmp` then `Files.move(ATOMIC_MOVE)` prevents corruption on crash mid-write
 14. **Event-driven spawner binding** — spawner discovery on place/load events, not per-tick polling. Ticker only does the delay acceleration (which genuinely needs per-tick work)
+15. **EE Clock extra ticks approach** — machine speedup via calling the machine's own `BlockEntityTicker.tick()` N extra times per game tick. Chosen over capability/interface approaches because it works with any vanilla or modded block-entity machine without cooperation. Same approach used by Draconic Evolution and similar mods.
+16. **`RegisterBrewingRecipesEvent` on `NeoForge.EVENT_BUS`** — in 1.21.11, this event is NOT a `IModBusEvent`. Must be registered on `NeoForge.EVENT_BUS`, not `modEventBus`. The crash error is `IllegalArgumentException: This bus only accepts subclasses of IModBusEvent`.
+17. **Splash/lingering Mega Chanter potions allowed** — no brewing lock-out; vanilla brewing chain naturally produces them. Intentionally left as-is.
+18. **`affectNeighborsAfterRemoval` replaces `onRemove` in 1.21.11** — `BlockBehaviour.onRemove(BlockState, Level, BlockPos, BlockState, boolean)` does not exist in 1.21.11. Use `affectNeighborsAfterRemoval(BlockState, ServerLevel, BlockPos, boolean)` instead. Key difference: block at pos is already removed when this fires. Call `notifyColumn(pos)` (finds lower fragment) AND `notifyColumn(pos.above())` (finds upper fragment if column was split). `playerWillDestroy` still handles player removal while block is still in world.
+19. **`on_mob_spawn_equipment` tag for mob enchantments** — pure JSON, no Java code; much simpler than a custom `IGlobalLootModifier`. Mobs that spawn with equipment have a chance to have these enchantments on their gear.
 
-## 8. Event Broadcasting
+## 9. Event Broadcasting
 
 Server-side events are pushed to all connected WebSocket clients as JSON messages.
 Implemented in `EventBroadcaster.java`. Registered via `NeoForge.EVENT_BUS.addListener()` in `MinaretMod`.
@@ -375,7 +454,7 @@ Aggregated — fires when accumulated HP ≥ 10, or ≥ 1 minute since last broa
 Prevents spam from natural regen (~1 HP every 0.5s).
 NeoForge: `LivingHealEvent` where entity is `ServerPlayer`.
 
-## 9. Out of Scope
+## 10. Out of Scope
 
 - TLS/SSL (WSS) — local use only
 - IP whitelisting / firewall — local use only

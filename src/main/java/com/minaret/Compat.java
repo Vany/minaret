@@ -437,6 +437,13 @@ public final class Compat {
         }
     }
 
+    /** Returns a ResourceKey for a custom enchantment registered under the Minaret mod ID. */
+    public static net.minecraft.resources.ResourceKey<
+        net.minecraft.world.item.enchantment.Enchantment
+    > enchantmentKey(String name) {
+        return createResourceKey(net.minecraft.core.registries.Registries.ENCHANTMENT, name);
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> net.minecraft.resources.ResourceKey<T> createResourceKey(
         net.minecraft.resources.ResourceKey<

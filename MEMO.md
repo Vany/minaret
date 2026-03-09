@@ -5,9 +5,9 @@
 
 ## 🎯 Current Status: ✅ FULLY FUNCTIONAL
 
-**Latest Build**: `build/libs/minaret-1.0.0.jar` (15,879 bytes)  
-**Version**: 1.0.0  
-**Compatibility**: NeoForge 21.1.172+ | Minecraft 1.21.1 | Java 21+
+**Latest Build**: `versions/1.21.11/build/libs/minaret-1.21.11-1.0.1.jar`
+**Version**: 1.0.1
+**Compatibility**: NeoForge 21.11.38-beta | Minecraft 1.21.11 | Java 21+
 
 ## 🚀 Implemented Features
 
@@ -142,7 +142,7 @@ auth_password = ""
 ## 🔧 Technical Architecture
 
 ### Implementation Details
-- **Language**: Java 21 with NeoForge 21.1.172+
+- **Language**: Java 21 with NeoForge 21.11.38-beta (MC 1.21.11)
 - **Dependencies**: Zero external dependencies (Java standard library only)
 - **WebSocket**: Manual RFC 6455 implementation using ServerSocket
 - **JSON Processing**: Custom SimpleJson parser/generator
@@ -159,7 +159,11 @@ auth_password = ""
 - **`ChunkLoaderBlock` / `ChunkLoaderBlockEntity`**: Chunk force-loading block
 - **`ChunkLoaderData`**: Persistent chunk loader position registry (atomic text file save)
 - **`WardingPostBlock` / `WardingPostBlockEntity`**: Hostile mob repulsion block (radius scales with column height)
-- **`Compat`**: Cross-version reflection utilities with cached Method/Field objects
+- **`EEClockBlock` / `EEClockBlockEntity`**: Column-based machine accelerator (N extra ticks per game tick; machine above or below column)
+- **`SwiftStrikeHandler`**: Attack speed enchantment handler (onPlayerTick)
+- **`AccelerateHandler`**: Movement speed enchantment handler (onEntityJoinLevel)
+- **`ToughnessHandler`**: Armor bonus enchantment handler (onPlayerTick)
+- **`Compat`**: Reflection utilities with cached Method/Field objects (hasPermission, getTagInt, createBlockEntityType, setBlockId/setItemId, isClient)
 
 ### Design Decisions
 - **No External Dependencies**: Eliminates jar bundling complexity and version conflicts
@@ -262,7 +266,7 @@ build/libs/minaret-1.0.0.jar
 - **IDE**: IntelliJ IDEA / Eclipse with NeoForge MDK
 - **Java**: OpenJDK 21+ required
 - **Gradle**: 8.8 with NeoForge Gradle plugin 7.0.156
-- **NeoForge**: 21.1.172 (compatible with 21.1+)
+- **NeoForge**: 21.11.38-beta
 
 ### Project Structure
 ```
@@ -333,13 +337,23 @@ minaret/
 - **Problem**: Setting `requiredPlayerRange = -1` makes the spawner always active, bypassing the player distance check. During shutdown, the server's `while(hasWork())` save loop never terminates because the spawner keeps generating work.
 - **Solution**: Use `requiredPlayerRange = 32767` instead. Large enough to be effectively infinite during gameplay, but stops naturally when all players disconnect during shutdown.
 
-**Cross-version SavedData incompatibility:**
-- **Problem**: `SavedDataType` class doesn't exist in 1.21.1. `CompoundTag.getList()` returns `ListTag` in 1.21.1 but `Optional<ListTag>` in 1.21.11.
-- **Solution**: Plain text file format (`X Y Z` per line) with atomic save, avoiding SavedData entirely.
+**ChunkLoaderData plain text format:**
+- **Decision**: Plain text file (`X Y Z` per line), atomic save via tmp+rename. Avoids `SavedData` complexity.
 
-**Cross-version neighborChanged incompatibility:**
-- **Problem**: `neighborChanged` method signature changed from `BlockPos neighborPos` in 1.21.1 to `Orientation` in 1.21.11. Can't override in shared source.
-- **Solution**: Spawner-placed-after-agitator detection deferred to chunk reload (`onLoad`). `onNeighborChanged()` method exists on the block entity for future use.
+**neighborChanged not overridden:**
+- `neighborChanged` in 1.21.11 takes `Orientation` (not `BlockPos`). Not currently overridden — spawner-placed-after-agitator detection deferred to chunk reload (`onLoad`).
+
+### RegisterBrewingRecipesEvent wrong bus (RESOLVED)
+- **Problem**: `modEventBus.addListener(RegisterBrewingRecipesEvent...)` crashed with `IllegalArgumentException: This bus only accepts subclasses of IModBusEvent`. This event is NOT a mod-bus event in 1.21.11.
+- **Solution**: Changed to `NeoForge.EVENT_BUS.addListener(...)`.
+
+### `onRemove` removed in 1.21.11 (RESOLVED)
+- **Problem**: `BlockBehaviour.onRemove(BlockState, Level, BlockPos, BlockState, boolean)` does not exist in 1.21.11. `@Override` fails with "method does not override or implement a method from a supertype".
+- **Solution**: Override `affectNeighborsAfterRemoval(BlockState, ServerLevel, BlockPos, boolean)` instead. Fires after block removal (pos is already air). Call `notifyColumn(pos)` + `notifyColumn(pos.above())` to cover split-column cases. `playerWillDestroy` still handles player-driven removal (block still in world at that point).
+
+### EEClockBlockEntity ticker wildcard type error (RESOLVED)
+- **Problem**: `machine.getType()` returns `BlockEntityType<?>` (wildcard). `Block.getTicker()` doesn't exist; `BaseEntityBlock.getTicker()` returns `BlockEntityTicker<T>` but requires `BlockEntityType<T>` (not wildcard).
+- **Solution**: Added `instanceof BaseEntityBlock entityBlock` pattern match, moved cast helper `getMachineTicker` to `EEClockBlock` with `@SuppressWarnings("unchecked")` casting `be.getType()` to `BlockEntityType<T>`. Cast is safe since BE and type always correspond.
 
 ## 🔄 Future Enhancement Roadmap
 
@@ -378,16 +392,21 @@ minaret/
 ## 🛠️ Dev Environment & Deploy
 
 - **Repo**: `/Users/vany/l/minaret`
-- **Test instance**: `/Users/vany/Library/Application Support/PrismLauncher/instances/1.21.11/mods/`
+- **Test instance**: `/Users/vany/Library/Application Support/PrismLauncher/instances/VanyLLa3d/minecraft/mods/`
 - **Editor**: Zed with Claude Code plugin
 - **Deploy**: After `make build-1.21.11`, copy built jar to test instance mods folder
 - Always read `CLAUDE.md` at session start
 
-## 🔬 Cross-version API Notes
+## 🔬 API Notes (1.21.11 / NeoForge 21.11)
 
-- `DataComponents.FOOD` (not NeoForge's `getFoodProperties()`) works cross-version for food detection
-- `PlayerEvent.getEntity()` — use this, not `getPlayer()` in NeoForge 21.x
+- `DataComponents.FOOD` — use this for food detection (not `getFoodProperties()`)
+- `PlayerEvent.getEntity()` — use this, not `getPlayer()`
 - `WebSocketServer.broadcast(String)` — sends to all connected clients
+- **`RegisterBrewingRecipesEvent`** fires on `NeoForge.EVENT_BUS` in 1.21.11 (not modEventBus). Using modEventBus crashes with `IllegalArgumentException: This bus only accepts subclasses of IModBusEvent`
+- **`Potions.AWKWARD`** is already `Holder<Potion>` in 1.21.11 — no `.getHolderOrThrow()` needed
+- **`Potion` constructor** in 1.21.11 requires name as first arg: `new Potion("name", MobEffectInstance...)`. Bare `new Potion(MobEffectInstance...)` fails compilation.
+- **`BaseEntityBlock.getTicker()`** — `getTicker` lives on `BaseEntityBlock`, not on `Block`. Must `instanceof BaseEntityBlock` check before calling. Wildcard return `BlockEntityTicker<?>` must be resolved with a generic helper using `@SuppressWarnings("unchecked")` cast on `be.getType()`.
+- **`affectNeighborsAfterRemoval` (1.21.11 only)** — replaces `onRemove` from 1.21.1. Signature: `protected void affectNeighborsAfterRemoval(BlockState, ServerLevel, BlockPos, boolean)`. Block at pos is already removed when called. `shouldChangedStateKeepBlockEntity(BlockState)` is also new in 1.21.11 (determines if BE persists across state change).
 
 ## 🎯 Project Completion Status
 

@@ -17,5 +17,14 @@
   "item.minaret.repelling_post": "Repelling Post",
   "block.minaret.antiwither": "Antiwither",
   "item.minaret.antiwither": "Antiwither",
-  "itemGroup.minaret": "Minaret"
+  "itemGroup.minaret": "Minaret",
+  "enchantment.minaret.swift_strike": "Swift Strike",
+  "enchantment.minaret.accelerate": "Accelerate",
+  "enchantment.minaret.toughness": "Toughness",
+  "block.minaret.ee_clock": "EE Clock",
+  "item.minaret.ee_clock": "EE Clock",
+  "item.minecraft.potion.effect.mega_chanter": "Potion of Mega Chanting",
+  "item.minecraft.splash_potion.effect.mega_chanter": "Splash Potion of Mega Chanting",
+  "item.minecraft.lingering_potion.effect.mega_chanter": "Lingering Potion of Mega Chanting",
+  "item.minecraft.tipped_arrow.effect.mega_chanter": "Arrow of Mega Chanting"
 }
