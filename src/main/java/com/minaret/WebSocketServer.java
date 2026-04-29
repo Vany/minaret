@@ -7,6 +7,8 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Base64;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
 import net.minecraft.server.MinecraftServer;

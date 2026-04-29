@@ -10,6 +10,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -35,6 +36,7 @@ public final class MessageDispatcher {
         HANDLERS.put("command",    (json, server, respond) -> handleCommand(json.get("command"), server, respond));
         HANDLERS.put("getEffects", (json, server, respond) -> handleGetEffects(json.get("getEffects"), server, respond));
         HANDLERS.put("use",        MessageDispatcher::handleUse);
+        HANDLERS.put("cast",       MessageDispatcher::handleCast);
     }
 
     private MessageDispatcher() {}
@@ -58,7 +60,7 @@ public final class MessageDispatcher {
             respondError(
                 respond,
                 null,
-                "Unknown message type. Use 'message', 'command', 'getEffects', or 'use' fields."
+                "Unknown message type. Use 'message', 'command', 'getEffects', 'use', or 'cast' fields."
             );
         } catch (Exception e) {
             LOGGER.error("Error processing message: {}", message, e);
@@ -279,6 +281,60 @@ public final class MessageDispatcher {
             } finally {
                 Compat.setInventorySlot(inv, prevSlot);
             }
+        });
+    }
+
+    /**
+     * Switches the player to the specified hotbar slot (0–8), fires a client KeyMapping
+     * action by name, then restores the original slot — all on the client side via a
+     * custom S2C packet. Responds immediately after sending the packet.
+     *
+     * JSON: {"cast": "playerName", "slot": 3, "action": "key.use"}
+     */
+    private static void handleCast(
+        Map<String, String> json,
+        MinecraftServer server,
+        Consumer<String> respond
+    ) {
+        String playerName = json.get("cast");
+        String slotStr = json.get("slot");
+        String action = json.get("action");
+
+        if (slotStr == null) {
+            respondError(respond, "cast", "Missing 'slot' field");
+            return;
+        }
+        if (action == null || action.isEmpty()) {
+            respondError(respond, "cast", "Missing 'action' field");
+            return;
+        }
+        int slot;
+        try {
+            slot = Integer.parseInt(slotStr);
+        } catch (NumberFormatException e) {
+            respondError(respond, "cast", "Invalid slot: " + slotStr);
+            return;
+        }
+        if (slot < 0 || slot > 8) {
+            respondError(respond, "cast", "Slot must be 0–8, got: " + slot);
+            return;
+        }
+
+        server.execute(() -> {
+            ServerPlayer player = server.getPlayerList().getPlayerByName(playerName);
+            if (player == null) {
+                respondError(respond, "cast", "Player not found: " + playerName);
+                return;
+            }
+
+            PacketDistributor.sendToPlayer(player, new CastPacket(slot, action));
+            respondSuccess(
+                respond, "cast",
+                "player", playerName,
+                "slot", String.valueOf(slot),
+                "action", action
+            );
+            LOGGER.info("cast: player={} slot={} action={}", playerName, slot, action);
         });
     }
 

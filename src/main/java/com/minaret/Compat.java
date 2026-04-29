@@ -54,6 +54,37 @@ public final class Compat {
         }
     }
 
+    // ── Identifier (ResourceLocation on 1.21.1, Identifier on 1.21.11) ──
+
+    /**
+     * Factory method: Identifier.of(ns, path) on 1.21.11, ResourceLocation.fromNamespaceAndPath on 1.21.1.
+     * Returns the ID object as Object to avoid a compile-time dependency on either class.
+     */
+    private static final Method CREATE_IDENTIFIER = resolveCreateIdentifier();
+
+    private static Method resolveCreateIdentifier() {
+        // Both Identifier (1.21.11) and ResourceLocation (1.21.1) use fromNamespaceAndPath.
+        for (String cls : new String[]{
+                "net.minecraft.resources.Identifier",
+                "net.minecraft.resources.ResourceLocation"}) {
+            try {
+                return Class.forName(cls).getMethod("fromNamespaceAndPath", String.class, String.class);
+            } catch (Exception ignored) {}
+        }
+        LOGGER.error("Cannot resolve identifier factory — neither Identifier nor ResourceLocation found");
+        return null;
+    }
+
+    /** Create a resource identifier (Identifier on 1.21.11, ResourceLocation on 1.21.1). */
+    public static Object createIdentifier(String namespace, String path) {
+        if (CREATE_IDENTIFIER == null) throw new RuntimeException("No identifier factory available");
+        try {
+            return CREATE_IDENTIFIER.invoke(null, namespace, path);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create identifier " + namespace + ":" + path, e);
+        }
+    }
+
     // ── Environment ─────────────────────────────────────────────────────
 
     private static final boolean IS_CLIENT = resolveIsClient();

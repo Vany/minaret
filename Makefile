@@ -1,4 +1,6 @@
-.PHONY: build build-1.21.1 build-1.21.11 run clean test setup check jar
+.PHONY: build build-1.21.1 build-1.21.11 run clean test setup check jar install
+
+MODS_DIR := $(HOME)/Library/Application Support/PrismLauncher/instances/VanyLLa3d/minecraft/mods
 
 # Environment setup
 export PATH := /opt/homebrew/bin:$(PATH)
@@ -42,3 +44,9 @@ jar: build
 	@echo "Jar locations:"
 	@ls -la versions/1.21.1/build/libs/*.jar 2>/dev/null || true
 	@ls -la versions/1.21.11/build/libs/*.jar 2>/dev/null || true
+
+install: build-1.21.11
+	@echo "Installing to VanyLLa3d..."
+	@rm -f "$(MODS_DIR)"/minaret-1.21.11-*.jar
+	@cp versions/1.21.11/build/libs/minaret-1.21.11-*.jar "$(MODS_DIR)/"
+	@echo "Installed: $$(ls "$(MODS_DIR)"/minaret-1.21.11-*.jar)"

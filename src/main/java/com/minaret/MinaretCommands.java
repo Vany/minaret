@@ -24,6 +24,7 @@ public final class MinaretCommands {
             Commands.literal("minaret")
                 .requires(source -> Compat.hasPermission(source, OP_LEVEL))
                 .then(execCommand())
+                .then(attrsCommand())
                 .then(addKeyCommand())
                 .then(addCommandCommand())
                 .then(delKeyCommand())
@@ -33,6 +34,17 @@ public final class MinaretCommands {
     }
 
     // ── Command definitions ─────────────────────────────────────────────
+
+    private static LiteralArgumentBuilder<CommandSourceStack> attrsCommand() {
+        return Commands.literal("attrs")
+            .executes(ctx -> AttrsCommand.execute(ctx.getSource(), null))
+            .then(Commands.argument("player", StringArgumentType.word())
+                .executes(ctx -> AttrsCommand.execute(
+                    ctx.getSource(),
+                    StringArgumentType.getString(ctx, "player")
+                ))
+            );
+    }
 
     private static LiteralArgumentBuilder<CommandSourceStack> execCommand() {
         return Commands.literal("exec").then(

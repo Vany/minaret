@@ -1,7 +1,9 @@
 package com.minaret.client;
 
+import com.minaret.CastPacket;
 import com.minaret.ChordConfig;
 import com.minaret.ChordTarget;
+import com.minaret.Compat;
 import com.minaret.KeyMappingCompat;
 import com.minaret.MessageDispatcher;
 import com.minaret.MinaretMod;
@@ -79,6 +81,22 @@ public class ChordKeyHandler {
     }
 
     private static void fireCmdTarget(String json) {
+        // "cast" is handled client-side: switch slot, fire action, restore slot.
+        // No server round-trip needed when firing from a chord.
+        var parsed = com.minaret.SimpleJson.parseFlat(json);
+        if (parsed.containsKey("cast")) {
+            String slotStr = parsed.get("slot");
+            String action  = parsed.get("action");
+            if (slotStr != null && action != null) {
+                try {
+                    performCast(Integer.parseInt(slotStr), action);
+                    return;
+                } catch (NumberFormatException ignored) {}
+            }
+            LOGGER.warn("cast chord missing valid slot/action in: {}", json);
+            return;
+        }
+
         var server = MinaretMod.getServer();
         if (server == null) {
             LOGGER.warn("Cannot execute chord command — no server");
@@ -87,6 +105,17 @@ public class ChordKeyHandler {
         MessageDispatcher.dispatch(json, server, response ->
             LOGGER.debug("Chord command response: {}", response)
         );
+    }
+
+    /** Switch to slot, fire the KeyMapping action, schedule slot restore for ClientTickEvent.Post. */
+    private static void performCast(int slot, String action) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+        var inv = mc.player.getInventory();
+        castRestoreSlot = Compat.getInventorySlot(inv);
+        Compat.setInventorySlot(inv, slot);
+        fireKeyTarget(action);
+        LOGGER.debug("cast: slot {} → {}, action={}", castRestoreSlot, slot, action);
     }
 
     private static void fireChord(String sequence) {
@@ -133,6 +162,29 @@ public class ChordKeyHandler {
             }
         }
         return null;
+    }
+
+    // ── Cast command (server → client) ──────────────────────────────────
+
+    /**
+     * Pending hotbar slot to restore after the cast action is consumed.
+     * -1 means no restore pending. Written in enqueueWork (main thread), read
+     * in ClientTickEvent.Post (main thread) — no concurrency risk.
+     */
+    private static int castRestoreSlot = -1;
+
+    /**
+     * Receive a CastPacket: switch to the requested slot, fire the KeyMapping,
+     * and schedule the original slot to be restored in ClientTickEvent.Post —
+     * after handleKeybinds() has had a chance to consume the click.
+     */
+    public static void handleCast(CastPacket pkt, net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
+        ctx.enqueueWork(() -> performCast(pkt.slot(), pkt.action()));
+    }
+
+    /** Receive a ClipboardPacket: write the text to the OS clipboard. */
+    public static void handleClipboard(com.minaret.ClipboardPacket pkt, net.neoforged.neoforge.network.handling.IPayloadContext ctx) {
+        ctx.enqueueWork(() -> Minecraft.getInstance().keyboardHandler.setClipboard(pkt.text()));
     }
 
     // ── Trie ────────────────────────────────────────────────────────────
@@ -237,10 +289,18 @@ public class ChordKeyHandler {
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {
-        if (!isActive()) return;
-        if (isTimedOut()) {
+        if (isActive() && isTimedOut()) {
             if (currentNode.sequence != null) fireChord(currentNode.sequence);
             else resetState();
+        }
+
+        // Restore hotbar slot after cast action was consumed by handleKeybinds() this tick.
+        if (castRestoreSlot >= 0) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                Compat.setInventorySlot(mc.player.getInventory(), castRestoreSlot);
+            }
+            castRestoreSlot = -1;
         }
     }
 

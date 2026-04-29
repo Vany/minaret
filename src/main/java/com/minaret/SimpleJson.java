@@ -4,7 +4,7 @@ import java.util.*;
 
 /**
  * Minimal JSON parser/generator — supports strings, numbers, booleans, null,
- * nested objects, and arrays. No external dependencies.
+ * nested objects, and arrays. No external dependencies. Supports &#92;uXXXX escapes.
  *
  * Parse:  Object result = SimpleJson.parseValue(jsonString)
  *         → returns Map<String,Object>, List<Object>, String, Number, Boolean, or null
@@ -284,7 +284,7 @@ public class SimpleJson {
 
     /**
      * Unescape a JSON string value (with surrounding quotes already stripped).
-     * Handles standard JSON backslash sequences including {@code \uXXXX}.
+     * Handles standard JSON backslash sequences including &#92;uXXXX.
      */
     public static String unescapeString(String s) {
         StringBuilder sb = new StringBuilder(s.length());

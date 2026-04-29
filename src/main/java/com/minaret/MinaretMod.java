@@ -28,6 +28,17 @@ public class MinaretMod {
     public MinaretMod(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, MinaretConfig.CONFIG_SPEC);
 
+        modEventBus.addListener(
+            (net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent e) -> {
+                // Lambdas (not method refs) defer classloading of ChordKeyHandler —
+                // safe on dedicated server where client classes must not be loaded.
+                var r = e.registrar("1");
+                r.playToClient(CastPacket.TYPE, CastPacket.CODEC,
+                    (pkt, ctx) -> com.minaret.client.ChordKeyHandler.handleCast(pkt, ctx));
+                r.playToClient(ClipboardPacket.TYPE, ClipboardPacket.CODEC,
+                    (pkt, ctx) -> com.minaret.client.ChordKeyHandler.handleClipboard(pkt, ctx));
+            }
+        );
         NeoForge.EVENT_BUS.addListener(
             (net.neoforged.neoforge.event.RegisterCommandsEvent e) ->
                 MinaretCommands.register(e.getDispatcher())
